@@ -108,7 +108,7 @@ muted.
 | Esc | quit (in the browser: leave fullscreen) |
 
 The browser page starts on a click, has its own Muted box, volume slider,
-size menu and fullscreen button (or F, Enter, or a double-click on the picture),
+size menu and fullscreen button (or F or Enter),
 and lists the same keys.
 
 ## The shim

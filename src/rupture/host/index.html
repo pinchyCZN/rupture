@@ -20,9 +20,8 @@
   o The Muted box and the volume slider call web_set_muted and
     web_set_volume; every 500 ms they are set from web_muted and
     web_volume, so M, + and - in the demo show here.
-  o Fullscreen is the browser's: the button, a double-click on the
-    picture, F or Enter; Esc leaves it. host_web.cpp leaves F to the
-    page.
+  o Fullscreen is the browser's: the button, F or Enter; Esc leaves
+    it. host_web.cpp leaves F to the page.
   o When the demo ends (Module.demoEnded) the host has stopped its
     frames and its input; the page closes the audio and the WebGL
     context, so nothing is left running, and the loading screen
@@ -106,7 +105,7 @@
     <tr><td>C, middle click</td><td>hold the look while running too, on and off</td></tr>
     <tr><td>wheel</td><td>zoom in and out; it stays (Ctrl: finer)</td></tr>
     <tr><td>right click</td><td>back to the demo's view and lens</td></tr>
-    <tr><td>F, Enter, double-click</td><td>fullscreen; Esc leaves it</td></tr>
+    <tr><td>F, Enter</td><td>fullscreen; Esc leaves it</td></tr>
   </table>
 
   <div id="about">
@@ -224,7 +223,6 @@
       toggle();
       full.blur();
     });
-    canvas.addEventListener('dblclick', toggle);
     loader.addEventListener('click', start);
     window.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' ||
