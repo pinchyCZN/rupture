@@ -99,16 +99,16 @@ muted.
 |-------------|------|
 | Space | pause and resume |
 | `.` | step one frame (held: keeps stepping) |
-| F | four times speed, on and off |
+| S | four times speed, on and off |
 | `]` | skip to the next part |
 | M, + - | mute and unmute, volume |
 | drag | look around; it eases back when let go (paused: it stays) |
-| C | hold the look while running too |
-| wheel | zoom (Ctrl: finer); middle or right click resets view and zoom |
+| C, middle click | hold the look while running too |
+| wheel | zoom (Ctrl: finer); right click resets view and zoom |
 | Esc | quit (in the browser: leave fullscreen) |
 
 The browser page starts on a click, has its own Muted box, volume slider,
-size menu and fullscreen button (or Enter, or a double-click on the picture),
+size menu and fullscreen button (or F, Enter, or a double-click on the picture),
 and lists the same keys.
 
 ## The shim

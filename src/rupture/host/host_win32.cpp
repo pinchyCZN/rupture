@@ -136,6 +136,8 @@ static LRESULT CALLBACK wnd_proc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lPar
 		}
 		return 0;
 	case WM_MBUTTONDOWN:
+		App_Key('C');
+		return 0;
 	case WM_RBUTTONDOWN:
 		App_ViewReset();
 		return 0;
@@ -298,7 +300,7 @@ static void help_show(HWND owner)
 	static const char text[] =
 	    "Space\tpause and resume\n"
 	    ".\tstep one frame (held: keeps stepping)\n"
-	    "F\tfour times speed, on and off\n"
+	    "S\tfour times speed, on and off\n"
 	    "]\tskip to the next part, and reset the look\n"
 	    "M\tmute and unmute\n"
 	    "+ -\tvolume up and down\n"
@@ -306,10 +308,10 @@ static void help_show(HWND owner)
 	    "\n"
 	    "Drag\tlook around; let go and it eases back\n"
 	    "\t(paused, the look stays)\n"
-	    "C\thold the look while running too, on and off\n"
+	    "C, middle click\n"
+	    "\thold the look while running too, on and off\n"
 	    "Wheel\tzoom in and out; it stays (Ctrl: finer)\n"
-	    "Middle or right click\n"
-	    "\tback to the demo's own view and lens\n"
+	    "Right click\tback to the demo's own view and lens\n"
 	    "\n"
 	    "Options: --size=WxH  --fullscreen  --part=NAME[@T]\n"
 	    "         --perflog=FILE  --nobatch";

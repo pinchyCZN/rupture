@@ -275,7 +275,7 @@ void App_Key(int key)
 			pause_toggle();
 		}
 		g_steps++;
-	} else if (key == 'F' && !g_agent) {
+	} else if (key == 'S' && !g_agent) {
 		g_fast = !g_fast;
 		g_fastSeek = -1.0;
 		if (!g_fast && !g_paused) {
@@ -339,7 +339,7 @@ void App_Wheel(int notches, bool fine)
 	}
 }
 
-/* OURS. A middle or right click: the demo's own view and lens again, at once. */
+/* OURS. A right click: the demo's own view and lens again, at once. */
 void App_ViewReset(void)
 {
 	g_zoom = 1.0;

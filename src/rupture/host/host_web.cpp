@@ -107,12 +107,15 @@ EMSCRIPTEN_KEEPALIVE void web_set_volume(int tenths)
 
 }
 
-/* OURS. A key as the character App_Key takes; with Ctrl, Alt or Meta held it is the browser's. */
+/* OURS. A key as the character App_Key takes; with Ctrl, Alt or Meta held it is the browser's. F is the page's fullscreen. */
 static EM_BOOL on_key(int type, const EmscriptenKeyboardEvent *e, void *user)
 {
 	(void)type;
 	(void)user;
 	if (e->ctrlKey || e->altKey || e->metaKey) {
+		return EM_FALSE;
+	}
+	if (strlen(e->key) == 1 && toupper((unsigned char)e->key[0]) == 'F') {
 		return EM_FALSE;
 	}
 	if (strlen(e->key) == 1) {
@@ -134,6 +137,10 @@ static EM_BOOL on_key(int type, const EmscriptenKeyboardEvent *e, void *user)
 static EM_BOOL on_mouse(int type, const EmscriptenMouseEvent *e, void *user)
 {
 	(void)user;
+	if (type == EMSCRIPTEN_EVENT_MOUSEDOWN && e->button == 1) {
+		App_Key('C');
+		return EM_TRUE;
+	}
 	if (type == EMSCRIPTEN_EVENT_MOUSEDOWN && e->button != 0) {
 		App_ViewReset();
 		return EM_TRUE;

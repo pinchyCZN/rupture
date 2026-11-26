@@ -21,7 +21,8 @@
     web_set_volume; every 500 ms they are set from web_muted and
     web_volume, so M, + and - in the demo show here.
   o Fullscreen is the browser's: the button, a double-click on the
-    picture or Enter; Esc leaves it.
+    picture, F or Enter; Esc leaves it. host_web.cpp leaves F to the
+    page.
   o When the demo ends (Module.demoEnded) the host has stopped its
     frames and its input; the page closes the audio and the WebGL
     context, so nothing is left running, and the loading screen
@@ -97,15 +98,15 @@
   <table id="keys">
     <tr><td>Space</td><td>pause and resume</td></tr>
     <tr><td>.</td><td>step one frame (held: keeps stepping)</td></tr>
-    <tr><td>F</td><td>four times speed, on and off</td></tr>
+    <tr><td>S</td><td>four times speed, on and off</td></tr>
     <tr><td>]</td><td>skip to the next part</td></tr>
     <tr><td>M</td><td>mute and unmute</td></tr>
     <tr><td>+ -</td><td>volume up and down</td></tr>
     <tr><td>drag</td><td>look around; let go and it eases back (paused: it stays)</td></tr>
-    <tr><td>C</td><td>hold the look while running too, on and off</td></tr>
+    <tr><td>C, middle click</td><td>hold the look while running too, on and off</td></tr>
     <tr><td>wheel</td><td>zoom in and out; it stays (Ctrl: finer)</td></tr>
-    <tr><td>middle, right click</td><td>back to the demo's view and lens</td></tr>
-    <tr><td>Enter, double-click</td><td>fullscreen; Esc leaves it</td></tr>
+    <tr><td>right click</td><td>back to the demo's view and lens</td></tr>
+    <tr><td>F, Enter, double-click</td><td>fullscreen; Esc leaves it</td></tr>
   </table>
 
   <div id="about">
@@ -226,7 +227,8 @@
     canvas.addEventListener('dblclick', toggle);
     loader.addEventListener('click', start);
     window.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' ||
+          ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.altKey && !e.metaKey)) {
         toggle();
       }
     });
