@@ -126,21 +126,34 @@ static EM_BOOL on_key(int type, const EmscriptenKeyboardEvent *e, void *user)
 	return EM_FALSE;
 }
 
-/* OURS */
+/*
+ * OURS. Up and move are the window's, so a look-drag carries on off
+ * the canvas; only a look-drag's are claimed. A claimed event's default
+ * is prevented, and the page's volume slider then cannot be dragged.
+ */
 static EM_BOOL on_mouse(int type, const EmscriptenMouseEvent *e, void *user)
 {
 	(void)user;
 	if (type == EMSCRIPTEN_EVENT_MOUSEDOWN && e->button != 0) {
 		App_ViewReset();
-	} else if (type == EMSCRIPTEN_EVENT_MOUSEDOWN) {
-		g_dragging = true;
-	} else if (type == EMSCRIPTEN_EVENT_MOUSEUP) {
-		g_dragging = false;
-		App_DragEnd();
-	} else if (g_dragging) {
-		App_Drag((int)e->movementX, (int)e->movementY);
+		return EM_TRUE;
 	}
-	return EM_TRUE;
+	if (type == EMSCRIPTEN_EVENT_MOUSEDOWN) {
+		g_dragging = true;
+		return EM_TRUE;
+	}
+	if (type == EMSCRIPTEN_EVENT_MOUSEUP) {
+		if (g_dragging) {
+			g_dragging = false;
+			App_DragEnd();
+		}
+		return EM_FALSE;
+	}
+	if (g_dragging) {
+		App_Drag((int)e->movementX, (int)e->movementY);
+		return EM_TRUE;
+	}
+	return EM_FALSE;
 }
 
 /* OURS */

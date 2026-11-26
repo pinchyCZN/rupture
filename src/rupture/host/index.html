@@ -45,6 +45,14 @@
   #keys { border-collapse: collapse; }
   #keys td { padding: 0 10px; vertical-align: top; }
   #keys td:first-child { color: #ccc; text-align: right; white-space: nowrap; }
+  #about { max-width: 72ch; width: 100%; margin-top: 14px;
+           border-top: 1px solid #222; padding-top: 6px; }
+  #about h1 { font-size: 15px; color: #ccc; letter-spacing: 2px;
+              margin: 10px 0 10px; }
+  #about p { margin: 0 0 10px; }
+  #about .note { color: #777; }
+  a { color: #6cf; text-decoration: none; }
+  a:hover { color: #9df; }
   #stage { position: relative; max-width: 100%; }
   #loader { position: absolute; left: 0; top: 0; right: 0; bottom: 0;
             background: #000; overflow: hidden; display: flex;
@@ -99,6 +107,28 @@
     <tr><td>middle, right click</td><td>back to the demo's view and lens</td></tr>
     <tr><td>Enter, double-click</td><td>fullscreen; Esc leaves it</td></tr>
   </table>
+
+  <div id="about">
+    <h1>RUPTURE</h1>
+    <p>A Windows demo by Andromeda Software Development, and the winner
+      of the PC demo competition at The Gathering 2009. It draws with
+      OpenGL and Cg shaders to "Throw Navis Off The Train" by aMUSiC and
+      Leviathan.
+      <a href="https://www.pouet.net/prod.php?which=52931">pouet.net</a></p>
+
+    <p>This is not an emulator and not a capture. Every part is a
+      transcription of the original's own code, in C++ on WebGL2, and
+      every Cg shader the demo binds is transcribed to GLSL. It reads the
+      release's own meshes, textures and music; where the demo hard-codes
+      a number, so does this.</p>
+
+    <p class="note">The differences are ours: the TV's 838 video frames
+      are one MPEG-1 file, the music starts muted, and the look, zoom,
+      fast forward and part skip are additions the demo does not have.</p>
+
+    <p>The source and the reverse engineering notes:
+      <a href="https://github.com/pinchyCZN/rupture">github.com/pinchyCZN/rupture</a></p>
+  </div>
 </div>
 <script>
   (function () {
