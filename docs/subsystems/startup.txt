@@ -201,7 +201,16 @@ Table of Contents
 
    When maybe_g_demoMode (0x0050bbdc) is -1, only part_game is built,
    into g_parts[0] [verified]. The byte is initialised to 1, so the
-   normal run builds the seven parts above. What -1 selects is open.
+   normal run builds the seven parts above. Its one writer, WinMain at
+   0x00448ce6, stores 1, so nothing in the release reaches -1
+   [verified, the cross-references]. part_game::Init loads
+   helicopter.obj, gear.obj, gears2.obj, ten sprite*.obj meshes and
+   try1.sav, the vertex_boatg pair and the *2hg* projection fragment
+   programs, and music//1.mp3 .. 4.mp3 and "aMUSiC - Scalpel.mp3"
+   [verified, its strings]; the release ships helicopter.obj and
+   try1.sav but none of the others. Its Frame turns the first two
+   sequence knobs, divided by the window size, into angles
+   (subsystems/devcam.txt 1), and those are zero in the release.
 
    Music starts last: FSOUND_Init, FSOUND_Sample_Load, the FFT DSP
    unit enabled, FSOUND_PlaySound - all guarded by
