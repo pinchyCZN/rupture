@@ -1,0 +1,273 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                        THE LOOK SHARED BY EVERY PART
+
+
+Abstract
+
+   RUPTURE's look - dark faces, bright lines along every sharp edge,
+   a glow around them - is not one shader on every object. Each part
+   draws with its own Cg pairs, 64 files in all, but every scene
+   fragment program writes the same two outputs: the surface normal
+   to COLOR0 and a rim-lit colour to COLOR1. Every part then runs the
+   same four post passes over those two images. The lines come from
+   the post chain: it compares the normal image with a blurred copy
+   of itself, so a line appears wherever the normal changes and has
+   the same width on screen at any distance.
+
+Table of Contents
+
+   1. Two images per frame
+   2. The colour image: the rim term
+   3. The post chain
+      3.1. Blur the normals
+      3.2. The edge pass
+      3.3. Glow and lens
+   4. Why the lines are sharp
+   5. What parts add on top
+      5.1. Holes on a lattice
+      5.2. The burning front
+   6. What gfx_test lacks
+   7. Open questions
+
+1.  Two images per frame
+
+   Render target 0 has two colour attachments, set up by
+   Fbo_AttachTexture [verified, part_motor::Init's pushed arguments]:
+
+    target 0  COLOR0  this+0x1138   the normal image
+    target 0  COLOR1  this+0x113c   the colour image
+    target 1  COLOR0  this+0x1144   quarter size
+    target 2  COLOR0  this+0x1e4    half size
+
+   The scene is drawn into target 0 with two draw buffers
+   (Fbo_Bind(0, 2)) and resolved into those textures by Fbo_Resolve.
+
+   Demo_Init makes the render targets with Fbo_Create (0x0044c140),
+   which gives each two GL_RGBA8 colour renderbuffers and a
+   GL_DEPTH_COMPONENT32 (0x81a7) one through
+   glRenderbufferStorageMultisampleEXT, plus an empty resolve FBO for
+   the textures [verified]:
+
+    target 0  view size            4 samples
+    target 1  a quarter each way   0 samples
+    target 2  half each way        0 samples
+
+   The depth precision matters where two meshes draw near-coplanar
+   faces, as part_rail's engine pistons do: with a 24-bit buffer the
+   inner mesh shows through [observed].
+
+   The 4 is pushed before Demo_Init tests g_antialiased, and both arms
+   of that test push the same size, so the setup dialog's Antialiased
+   box changes nothing here [verified, 0x0044745e..0x00447485]. Target
+   1 is never bound or resolved by any part: every Fbo_Bind and
+   Fbo_Resolve names target 0, and every Post_RunPass target 0 or 2
+   [verified, each call site], so this+0x1144 keeps the noise
+   Tex_CreateTarget filled it with. The render context's constructor
+   (0x004434c0) stores 0 in ctx+0x19b8 and -1 in ctx+0x19c0, and nothing
+   else writes them [verified, every instruction naming the offsets]:
+   no target or texture is mipmapped, and no post binder adds the
+   "oned" texture.
+
+   Every scene fragment program surveyed - 22 of the files the code
+   names, across all parts - writes
+
+    oColor1 = (oNormal.xyzz + 1) * 0.5        COLOR0, the normal
+    oColor2 = ...                             COLOR1, the colour
+    oColor2.w = Ramp.x                        distance fade
+
+   [verified, the shader sources]. The one surveyed file that does
+   not, fragment_motion, is a motion pass, not a surface. This output
+   contract is what the shared look rests on: a part may shade its
+   objects however it likes, as long as it writes the normal.
+
+2.  The colour image: the rim term
+
+   The vertex programs in the vertex_boat family compute, per vertex
+   [verified, vertex_boat.cpp and vertex_boat_test2cut.cpp]:
+
+    m    = pow(1 - max(dot(N, V), 0), 5)      0 facing, 1 edge-on
+    mult = 1 / (1 + k * d * d)                d = distance to camera
+    HCOL2 = diffuse * m * mult [* gain]       the rim colour
+    Ramp  = mult [* 0.5]                      becomes COLOR1.w
+
+   with k = 0.002 in vertex_boat and 0.0005, a +0.5 floor on m, and
+   a 0.65 gain in vertex_boat_test2cut (effects/motor.txt 2). The rim
+   term alone lights silhouettes - surfaces turning away from the
+   camera - not creases. A crease seen face-on has no rim.
+
+   N is the object matrix times the normal, never renormalised, so an
+   object scaled up (part_boat's 1.09 on its wreck pieces) has N longer
+   than 1, and facing the camera 1 - max(dot(N, V), 0) goes below 0.
+   The vertex profile is vp30 (subsystems/startup.txt 3), which
+   compiles the pow as EX2(5 * LG2(x)) [verified, the release's cg.dll
+   on vertex_boat.cpp]; below 0 that is NaN, and the clamped colour
+   outputs turn it into 1 in every channel: such faces render
+   white-hot, not dark [observed, the colour target of both programs
+   at part_boat t = 29]. GLSL's pow is undefined there, so the port
+   writes the case out in every vertex program carrying the term.
+   Only part_boat's wreck, 28.5 <= t < 32, changes at the 6 s and
+   0.5 s checkpoints [observed].
+
+3.  The post chain
+
+   Every part's Frame - all nine - calls Post_RunPass four times in
+   the same order with the same shape [verified, the call sites and
+   part_motor::Frame / part_boat::Frame side by side]. Each part
+   loads its own copies of the programs into its own slots; the files
+   are the same: fragment_blur256, fragment_wireframe and
+   fragment_bend3 are loaded by every part's Init [verified, string
+   cross-references].
+
+    pass  program     into      size   reads
+    1     blur256     target 2  half   the normal image
+    2     wireframe   target 0  full   normals, blurred normals, colour
+    3     blur256 x6  target 2  half   target 0 (pass 2's output)
+    4     bend3       target 0  full   target 0 and the glow
+
+   Then target 0's texture goes to the window as one full-screen quad
+   with glBlendFunc(GL_ONE, GL_ONE), tinted by a colour that ramps in
+   with the part's time [verified, part_motor::Frame]. Frame binds two
+   other textures first, this+0x1e4 and this+0x1144, but each bind
+   replaces the one before and only this+0x1138 is drawn.
+
+3.1.  Blur the normals
+
+   fragment_blur256 is a 13-tap cross: the centre, then +-1, +-2 and
+   +-4 steps along x and along y, step 0.0011 in texture coordinates,
+   averaged [verified]. Pass 1 runs it once over the normal image at
+   half size.
+
+3.2.  The edge pass
+
+   fragment_wireframe, with decal = the normal image, decal2 = its
+   blur and decal3 = the colour image [verified, Post_RunPass's
+   arguments in every part's Frame]:
+
+    N1    = decal  * 2 - 1                    the sharp normal
+    N2    = decal2 * 2 - 1                    the blurred normal
+    theta = saturate(max(0.3 * length(N1 - N2),
+                         1 - abs(dot(N1, N2))))
+    BC    = decal3                            the colour image
+    out   = (theta * (0.3 + 30 * BC) + BC) * BC.w
+
+   On a flat face the blur changes nothing, N1 = N2, theta = 0 and
+   the pixel is just BC * BC.w. Near a crease the blur mixes the two
+   faces' normals, theta rises toward 1, and the pixel becomes about
+   (0.3 + 31 * BC) * BC.w: thirty-one times the local colour plus a
+   fixed 0.3 [verified, the formula]. That ratio is the "edges lit,
+   faces dark" look. The line takes the colour of the surface under
+   it rather than a fixed line colour, and BC.w fades it with
+   distance.
+
+   The four offset vectors V..V3 the file declares are never used
+   [verified].
+
+3.3.  Glow and lens
+
+   Pass 3 blurs the edge pass's output six times at half size - the
+   glow. Pass 4, fragment_bend3, pulls the image toward a lens shape
+   by "alpha", splits it into red, green and blue taken 0.003 apart
+   along x, adds the glow the same way, and when the "RightV" / "UpV"
+   vector is longer than 0.0035 smears both along it over four taps -
+   a motion streak driven from the camera's movement [verified for
+   the shader; what feeds RightV and UpV is open].
+
+4.  Why the lines are sharp
+
+   The edge detector is "sharp normal minus blurred normal", which is
+   a high-pass on the normal image, so it responds only where the
+   normal changes within the blur's reach [inferred, from 3.1 and
+   3.2]. The reach is fixed in texture coordinates: four steps of
+   0.0011 is 0.0044 of the view either side, about six pixels at 1280
+   wide [inferred, arithmetic]. So the line has the same width on
+   screen whether the edge is near or far, and its brightness comes
+   from theta, not from how strongly the surface is lit. The rim term
+   (2) is a separate, softer contribution on silhouettes.
+
+   It follows that the lines need a normal discontinuity, and the
+   demo's .obj meshes provide one at every crease: they are drawn with
+   one normal per face, computed by the demo rather than read from the
+   file (formats/obj.txt 3). So every edge of every mesh draws a line
+   [verified for the normals; observed in gfx_test, section 6].
+
+5.  What parts add on top
+
+   Part-specific shaders add to COLOR1 or discard fragments; the post
+   chain then treats the result like any other surface.
+
+5.1.  Holes on a lattice
+
+   Many fragment programs discard on a product of two cosines of the
+   position [verified, the sources]:
+
+    if (cos(P.a * k) * cos(P.b * k) < c) discard
+
+   which cuts a regular lattice of holes - period 2 * pi / k along
+   each of the two axes, hole size set by c. P is oPosition2, the
+   object-space position, or oThePos, the position after
+   ModelViewObject. Examples:
+
+    fragment_boat_test2   oPosition2.y, z   k 0.7    c -0.7
+    fragment_boat_test3   oThePos.y, x      k 0.7    c -0.7
+                          oPosition2.y, x   k 1.7    c -0.5
+    f_bridge              oThePos.y, x      k 2.8    c -0.7
+    f_kthrio1             oThePos.x, y      k 0.8    c -0.6 + alphaplane2
+                          oThePos.x, y      k 5.8    c -0.6
+
+   In most the lattice is fixed by literals. In some a uniform moves
+   it - alphaplane2 in f_kthrio1, planecut in
+   fragment_projection_anisotropic2hg, "doit" in
+   fragment_boat_testhex2, "tick" and "fl" in fragment_city - which
+   is the knob that opens and closes the holes [verified for the
+   code; what each part feeds those uniforms is open].
+
+5.2.  The burning front
+
+   fragment_boat_test2 (the road blocks, effects/motor.txt 2) adds,
+   behind a
+   plane at x = alphaplane2,
+
+    ffx     = saturate(0.05 * (alphaplane2 - x))
+    oColor2 += saturate(ffx - cond2) * 2 * (1, 0.2, 0.1, 1)
+               * saturate(1 - (x - alphaplane2))
+
+   - a red-orange band along the front - and discards behind it
+   where a noise texture says so, so the surface burns away along the
+   band [verified, the shader]. It is the red strip down the middle
+   of the motor part's road [observed, the demo and gfx_test's demo
+   view at clock 78.3]. The programs v_roadcut and f_roadcut, in
+   this+0x1184, are not read yet.
+
+6.  What gfx_test lacks
+
+   src/gfx_test runs the chain on the vertex_boat_test2cut pair,
+   through the transcribed Obj_Load and Obj_DrawGroup, the four
+   passes and the final quad. Its default view is one instant of the
+   motor part: DrawScene's loop of ten room.obj blocks, transcribed,
+   with the demo's eye camera, clock and bend3 values as read at
+   clock 78.3 (effects/motor.txt 2.4), the demo's LightPos and its
+   decal textures/bg08.jpg. Next to the demo paused at that instant
+   the road strip matches in place, size and colour: dark slabs,
+   blue-white edges fading with distance, the red front down the
+   middle [observed, the two side by side]. A turntable view (key V)
+   puts the same pair on the motorcycle or a cube with a close camera
+   of ours, where mult is about 1 and everything comes out far
+   brighter; in the demo that pair never shades the motorcycle.
+
+   What it lacks: everything else DrawScene draws (the buildings, the
+   hex rings, the road pair, the motorcycle with v_motor and f_motor)
+   and the camera's motion, which comes from Frame's hand-keyed
+   windows.
+   Neither mesh reaches the k = 0.7 hole lattice (5.1), so no holes
+   appear [inferred].
+
+7.  Open questions
+
+   o Do .3ds meshes, drawn through L3DS, get lines too? It depends on
+     the optimisation level they are loaded with (formats/obj.txt 2).
+   o What feeds RightV, UpV and alpha in bend3, and the hole and
+     front uniforms in each part.
+   o Post_RunPass is also called from FUN_004ad800 (four times) and
+     FUN_0048cd60 (once); neither is read.

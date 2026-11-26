@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- rupture: the reconstruction, C++98 on OpenGL 3.3 core. The web build
+       is tools/build_web.sh. The release files it reads (src\meshes,
+       src\textures, src\music) are not committed; the post-build step copies them,
+       and the GLSL transcriptions in shaders\, beside the exe. -->
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>15.0</VCProjectVersion>
+    <ProjectGuid>{8D3F2A61-0B7C-4E59-9A14-C6E5B2D7F390}</ProjectGuid>
+    <RootNamespace>rupture</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v141</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <!-- Debug IS THE AGENT BUILD: /Gh /GH for the entry and exit hooks, a map
+       for tools/agentctl.py, and a fixed base so the map's addresses are the
+       live ones. Optimised, for speed, but with no inlining (/Ob0), so every
+       function is there to hook. gl1.cpp is left uninstrumented and inlined:
+       its per-vertex calls run millions of times a frame and halve the speed
+       hooked, and they are plumbing, not the demo's code. The agent files and the third-party decoders are never
+       instrumented; src/agent/agent_core.c must not be, or _penter recurses. -->
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'">
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)..\..\build\rupture\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\..\build\obj\rupture\$(Configuration)\</IntDir>
+    <TargetName>rupture</TargetName>
+    <LocalDebuggerWorkingDirectory>$(OutDir)</LocalDebuggerWorkingDirectory>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalDependencies>opengl32.lib;ole32.lib;windowscodecs.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /y /q /i "$(ProjectDir)shaders\*.*" "$(OutDir)shaders\" &gt; nul
+xcopy /y /q /i "$(ProjectDir)..\meshes\*.*" "$(OutDir)meshes\" &gt; nul
+xcopy /y /q /i "$(ProjectDir)..\textures\*.*" "$(OutDir)textures\" &gt; nul
+xcopy /y /q /i "$(ProjectDir)..\music\*.mp3" "$(OutDir)music\" &gt; nul
+if exist "$(ProjectDir)..\video\test_video2.mpg" xcopy /y /q /i "$(ProjectDir)..\video\test_video2.mpg" "$(OutDir)video\" &gt; nul</Command>
+      <Message>Copying the GLSL transcriptions, meshes, textures, the music and the video beside rupture.exe</Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <AdditionalOptions>/Gh /GH %(AdditionalOptions)</AdditionalOptions>
+      <PreprocessorDefinitions>RUPTURE_AGENT;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapFileName>$(OutDir)rupture.map</MapFileName>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+    </Link>
+  </ItemDefinitionGroup>
+  <!-- Release keeps a map and a fixed base too, for tools/portprof.py's Release mode. -->
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateMapFile>true</GenerateMapFile>
+      <MapFileName>$(OutDir)rupture.map</MapFileName>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ResourceCompile Include="host\rupture.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="core\glapi.cpp" />
+    <ClCompile Include="core\gl1.cpp">
+      <AdditionalOptions Condition="'$(Configuration)'=='Debug'"></AdditionalOptions>
+      <InlineFunctionExpansion Condition="'$(Configuration)'=='Debug'">Default</InlineFunctionExpansion>
+    </ClCompile>
+    <ClCompile Include="core\file.cpp" />
+    <ClCompile Include="core\shader.cpp" />
+    <ClCompile Include="core\obj.cpp" />
+    <ClCompile Include="core\track.cpp" />
+    <ClCompile Include="core\shard.cpp" />
+    <ClCompile Include="core\camera.cpp" />
+    <ClCompile Include="core\path.cpp" />
+    <ClCompile Include="core\post.cpp" />
+    <ClCompile Include="core\jpeg.cpp" />
+    <ClCompile Include="core\video.cpp" />
+    <ClCompile Include="core\music.cpp" />
+    <ClCompile Include="..\third_party\dr_mp3\dr_mp3.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <AdditionalOptions Condition="'$(Configuration)'=='Debug'"></AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\jpgd\jpgd.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <PreprocessorDefinitions>JPGD_USE_SSE2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\pl_mpeg\pl_mpeg.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <AdditionalOptions Condition="'$(Configuration)'=='Debug'"></AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="..\agent\agent_core.c">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Release'">true</ExcludedFromBuild>
+      <AdditionalOptions Condition="'$(Configuration)'=='Debug'"></AdditionalOptions>
+      <PreprocessorDefinitions>AGENT_PENTER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="host\agent_port.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)'=='Release'">true</ExcludedFromBuild>
+      <AdditionalOptions Condition="'$(Configuration)'=='Debug'"></AdditionalOptions>
+    </ClCompile>
+    <ClCompile Include="demo\demo.cpp" />
+    <ClCompile Include="demo\part_start.cpp" />
+    <ClCompile Include="demo\part_video.cpp" />
+    <ClCompile Include="demo\part_motor.cpp" />
+    <ClCompile Include="demo\part_truck.cpp" />
+    <ClCompile Include="demo\part_truck_draw.cpp" />
+    <ClCompile Include="demo\part_rail.cpp" />
+    <ClCompile Include="demo\part_rail_draw.cpp" />
+    <ClCompile Include="demo\part_boat.cpp" />
+    <ClCompile Include="demo\part_boat_draw.cpp" />
+    <ClCompile Include="demo\part_city.cpp" />
+    <ClCompile Include="demo\part_city_draw.cpp" />
+    <ClCompile Include="demo\part_city_draw2.cpp" />
+    <ClCompile Include="demo\part_end.cpp" />
+    <ClCompile Include="demo\part_end_draw.cpp" />
+    <ClCompile Include="demo\part_end_draw2.cpp" />
+    <ClCompile Include="demo\devcam.cpp" />
+    <ClCompile Include="demo\scene.cpp" />
+    <ClCompile Include="demo\app.cpp" />
+    <ClCompile Include="host\host_win32.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="core\types.h" />
+    <ClInclude Include="core\glapi.h" />
+    <ClInclude Include="core\gl1.h" />
+    <ClInclude Include="core\file.h" />
+    <ClInclude Include="core\shader.h" />
+    <ClInclude Include="core\obj.h" />
+    <ClInclude Include="core\track.h" />
+    <ClInclude Include="core\shard.h" />
+    <ClInclude Include="core\camera.h" />
+    <ClInclude Include="core\path.h" />
+    <ClInclude Include="core\music.h" />
+    <ClInclude Include="demo\part_start.h" />
+    <ClInclude Include="demo\part_video.h" />
+    <ClInclude Include="demo\part_motor.h" />
+    <ClInclude Include="demo\part_truck.h" />
+    <ClInclude Include="demo\part_rail.h" />
+    <ClInclude Include="demo\part_boat.h" />
+    <ClInclude Include="demo\part_city.h" />
+    <ClInclude Include="demo\part_city_draw.h" />
+    <ClInclude Include="demo\part_end.h" />
+    <ClInclude Include="demo\part_end_draw.h" />
+    <ClInclude Include="demo\devcam.h" />
+    <ClInclude Include="demo\scene.h" />
+    <ClInclude Include="core\post.h" />
+    <ClInclude Include="core\jpeg.h" />
+    <ClInclude Include="demo\demo.h" />
+    <ClInclude Include="host\host.h" />
+    <ClInclude Include="host\agent_port.h" />
+    <ClInclude Include="..\agent\agent_core.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="host\host_web.cpp" />
+    <None Include="shaders\ff.vert" />
+    <None Include="shaders\ff.frag" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

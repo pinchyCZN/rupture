@@ -1,0 +1,136 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                       THE DEVELOPER CAMERA RIG
+
+
+Abstract
+
+   The release still carries the developer rig used to place the parts'
+   cameras and scrub their clocks: three knobs at the head of the
+   sequence object, a scrub switch, the mouse buttons, the wheel, the
+   arrow keys, and a middle-click dump of the knobs and the eye position
+   into the text that the Esc exit copies to the clipboard. The code that
+   set the knobs from the input is not in the exe. Demo_Frame zeroes the
+   knobs and the switch every frame, so in the release they are always
+   0 and the rest of the rig has no effect on the picture.
+
+Table of Contents
+
+   1. The knobs
+   2. The input
+   3. The dump
+   4. Demo_Frame's part
+   5. Reconstruction notes
+   6. Open questions
+
+1.  The knobs
+
+   +-----------+----------------+--------------------------------------+
+   | Field     | Address        | Read by                              |
+   +===========+================+======================================+
+   | seq+0x00  | g_seq          | each part's Frame, its seqHead[0]    |
+   | seq+0x08  | 0x00514848     | seqHead[1], in camera expressions    |
+   | seq+0x10  | 0x00514850     | seqHead[2], in camera expressions,   |
+   |           |                | and Demo_Frame's delta scale         |
+   | seq+0x28  | 0x00514868     | each part's Frame: the scrub switch  |
+   +-----------+----------------+--------------------------------------+
+
+   Every part's Frame copies the three head doubles into its own
+   seqHead [verified, effects/motor.txt and the other part notes].
+   While seq+0x28 is nonzero a part sets its local clock from the first
+   knob instead of advancing it: part_motor 4 h0 - 20, part_truck 8 h0,
+   part_rail 10 h0 + 15 [verified]. The second and third knobs enter
+   the parts' camera and placement expressions, mostly multiplied by
+   constants such as 50, 10, 3 or 0 [verified, the part listings]. So
+   the first knob scrubs the running part and the other two move its
+   camera [inferred, from what reads them].
+
+   Demo_Frame stores 0 to all four every frame (0x00447d6c..
+   0x00447da1), before any part runs, and nothing else writes them
+   [verified, the cross-references]. part_game, which only demo mode -1
+   builds, also reads seq+0x10 and seq+0x2c [verified].
+
+2.  The input
+
+   Window_Proc (0x00442810) keeps:
+
+   +------------------+------------+---------------------------------+
+   | Global           | Address    | Set by                          |
+   +==================+============+=================================+
+   | g_devButtonL     | 0x005146e4 | WM_LBUTTONDOWN / UP, 1 / 0      |
+   | g_devButtonR     | 0x005146e5 | WM_RBUTTONDOWN / UP, 1 / 0      |
+   | g_devWheel       | 0x00514698 | WM_MOUSEWHEEL, += delta / 600   |
+   | g_seqArrowX      | 0x00514858 | VK_LEFT / VK_RIGHT, -/+ 1 per s |
+   | g_seqArrowY      | 0x00514860 | VK_UP / VK_DOWN, +/- 1.5 per s  |
+   +------------------+------------+---------------------------------+
+
+   The arrows are stepped by g_frameDt on every message that reaches
+   DefWindowProc, not once a frame, so they move only while messages
+   arrive [verified]. Demo_Frame reads the cursor with GetCursorPos at
+   entry and saves it to g_devCursorX and g_devCursorY (0x00514688,
+   0x00514690) at its normal exit, and copies g_devButtonR to seq+0x2c
+   [verified].
+
+   Nothing reads g_devButtonL, g_devWheel, the arrows or the cursor:
+   they have no absolute reader, and no part Frame or DrawScene reads
+   seq+0x18, seq+0x20 or seq+0x30..0x40 through its seq pointer
+   [verified]. The values the
+   rig would have turned into knobs are collected and dropped.
+
+3.  The dump
+
+   A middle click pushes the Vec4 {1, Pnt} onto the std::vector at
+   g_seqDevPoints (seq+0x90), where Pnt is the three doubles at
+   g_seqPnt (seq+0x30, 0 from Demo_Init and never written again), then
+   appends three lines to g_clipboardText, the std::string at
+   0x0050bbe4:
+
+    Cam :h0,h1,h2
+    Pnt :p0,p1,p2
+
+    MCr :ex,ey,ez
+
+   Each number is _gcvt(v, 6); each line ends in two spaces, and the
+   last two in a further blank line. MCr is the eye camera's position,
+   the floats at g_renderCtx+0x184c [verified]. At the end of the Esc
+   fade Demo_Frame puts g_clipboardText on the clipboard with
+   Clipboard_SetText [verified, subsystems/startup.txt 5]. So the rig
+   was used by scrubbing to a moment, setting the camera with the
+   knobs, clicking, and pasting the values into the source after exit
+   [inferred].
+
+4.  Demo_Frame's part
+
+   After the clock has advanced by the unscaled delta, the delta the
+   parts are handed is
+
+    g_frameDt = g_frameDt * (seq+0x10 + 1.0)
+    g_frameDt = 0.002                        if seq+0x10 < 0
+
+   (0x00447ee7, constants 0x004f36b8 and 0x004f40b0) [verified]. With
+   the knob at 0 that is the delta unchanged. Demo mode -1 uses
+   seq+0x10 * 0.0 + 1.0 instead. A trap: the decompiler shows the
+   normal path as the mode -1 form, because the 0.0 it multiplies by
+   there is the comparison's zero.
+
+   The table Demo_Frame fills while 0x005146a7 is set (FUN_0044d130,
+   with c://logs//metamorphosis2.log named in Demo_Init) is a
+   frame-time log, not part of the camera rig [inferred].
+
+5.  Reconstruction notes
+
+   src/rupture/demo/devcam.cpp holds the rig and is not wired: nothing
+   calls it. DevCam_Message is Window_Proc's developer cases,
+   DevCam_FrameStart, DevCam_FrameScale and DevCam_FrameEnd are
+   Demo_Frame's three developer sites, and DevCam_Init is Demo_Init's
+   stores. Rupture_DevCam gathers the globals and the seq fields
+   nothing in the relay reads, because Rupture_Seq is cleared with
+   memset. Driving the knobs from a hot key would be ours: the release
+   has no code that sets them.
+
+6.  Open questions
+
+   o What seq+0x18, seq+0x20, seq+0x30 and the point list fed in the
+     build that read them.
+   o _gcvt's exact spelling of whole numbers in MSVC 8's CRT.

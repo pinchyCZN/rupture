@@ -1,0 +1,463 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                                 VIDEO
+
+
+Abstract
+
+   part_video: the opening room - shelves, a desk, an oval TV playing
+   an animation and a wall of oval holes - which later breaks apart.
+   Every surface is shaded with the edge-and-glow look
+   (effects/look.txt), and two textures are laid over it by WORLD
+   position rather than by the meshes' own coordinates: the TV's
+   picture and the noise that dissolves the walls. Init 0x004b10c0,
+   Frame 0x004b19c0, DrawScene 0x004ae0a0. src/rupture draws it, as
+   slot 0 of its relay.
+
+Table of Contents
+
+   1. The frames
+   2. Init: meshes, textures, shaders
+   3. DrawScene
+      3.1. The TV: the hex4 grid
+      3.2. The room: walls2, walls, room2
+      3.3. Projection, clear colour, cameras
+      3.4. The shards
+      3.5. The sky
+   4. Textures laid by world position
+   5. Frame and the post chain
+      5.1. The camera
+      5.2. The shake
+      5.3. The post chain
+   6. Values read from the running demo
+   7. Open questions
+
+1.  The frames
+
+   part_video::Init sets this+0x1178 to 0x346 (838) and loops i from
+   1 to 838 inclusive [verified]:
+
+    sprintf(name, i < 10   ? "test_video2//000%d.png"
+                : i < 100  ? "test_video2//00%d.png"
+                : i < 1000 ? "test_video2//0%d.png"
+                :            "test_video2//%d.png", i)
+    cvLoadImage(name, 0)                    greyscale
+    FUN_0044eba0 into texture slot 9999 + i
+    glTexParameteri(s and t, GL_CLAMP_TO_EDGE)
+
+   FUN_0044eba0 uploads with GL_LINEAR both ways, internal format 1
+   and GL_LUMINANCE [verified]. A frame read back from the running
+   demo matched its file exactly, rows bottom up [observed]. Every
+   frame is resident from load time. The release holds 839 frames,
+   0000.png to 0838.png; 0000.png is never loaded [verified, loop
+   bounds and directory listing].
+
+   DrawScene picks the frame as texture slot
+
+    10000 + __ftol2(max(t - 3, 0) * 30) % 838
+
+   so the picture runs at 30 frames a second from t = 3, file
+   frame + 1 [verified, 0x004aead5 onward; observed, the bound
+   texture at t = 10.29 was file 0219.png].
+
+2.  Init: meshes, textures, shaders
+
+   [verified, the disassembly of Init]
+
+    this+0x294    meshes/hex4.obj       the TV's cells (3.1)
+    this+0x2d0    meshes/walls2.obj     desk, floor, shelf frame
+    this+0x30c    meshes/walls.obj      the room box, later shards
+    0x00b1e620    meshes/room2.obj      the bookshelves
+    7000          meshes/box.3ds        material MARMARO.JPG
+
+    base+0x0a     textures/pattern5.jpg
+    base+0x5a     textures/bg08.jpg
+    base+0x14     textures/blob41b.jpg  (FUN_004647e0, twice)
+    base+0x1e     textures/cloudt2.jpg
+
+    this+0x115c   vertex_projection_anisotropic
+                  + fragment_projection_anisotropic2hh  (the TV)
+    this+0x1164   vertex_projection_anisotropic4
+                  + fragment_projection_anisotropic2box (the room)
+    this+0x1168   vertex_boat + fragment_train
+    this+0x19c    fragment_blur256
+    this+0x1a4    fragment_blur256FOV
+    this+0x198    fragment_Blur_circular
+    this+0x1a0    fragment_bend3
+    this+0x1a8    fragment_wireframe
+
+   pattern5, the pair in this+0x1168 and the passes in this+0x1a4 and
+   this+0x198 are loaded and never bound; part_video's slots are its
+   own band from 7000 (0x1b58), so no other part reads them [verified,
+   the reads of those fields; effects/motor.txt 6].
+
+   The TV pair is loaded together with box.3ds by FUN_004bb6c0.
+   walls.obj's groups become the shards, a vector at this+0x338 of
+   0x228-byte records (3.4).
+
+3.  DrawScene
+
+   part_video::DrawScene(this, ctx, unused) draws, in order
+   [verified]: maybe_Scene_DrawLit with the TV pair, the hex4 grid,
+   maybe_Scene_DrawLit with the room pair, walls2, the walls.obj
+   shards in immediate mode, three room2 copies and, before t = 11,
+   a fourth, then the sky (3.5). t is the part's clock this+0x1b8; s
+   is this+0x358, 0 in the opening [observed].
+
+   maybe_Scene_DrawLit binds a pair, sets CameraPos (always the
+   context's eye camera), LightPos (the light camera's eye),
+   ModelViewProj and ModelViewLightProj (the light camera through
+   gluPerspective(75 + ctx+0x608e38, 1, near, far), biased by
+   translate(0.5) scale(0.5)), and hands box.3ds to maybe_Mesh_Draw,
+   which binds decal, light and the material's texture2 and draws
+   tris * ctx+0x1bd8 * 3 indices. DrawScene sets ctx+0x1bd8 to 0
+   around both calls, so box.3ds is never drawn: the calls are only
+   the pairs' set-up [verified, 0x00454fcc].
+
+   3.1.  The TV: the hex4 grid
+
+    _srand(0x409bfa)
+    for i = -20 .. 19, j = -9 .. 11:
+      GL_TEXTURE = translate(2.6775 i,
+                             sin(2.2 * 0.9 t + 0.02 j) * 0.1 + 0.2 s,
+                             2.9925 j + 0 + i % 2)
+      r   = sqrt(j^2 + i^2 + 0)                      in floats
+      ang = sin(1.2 r - (Math_Random() + 3) * 0.9 t) * 30
+      rotate(ang, 1, -0.2, Math_Random() * 2 - 1)
+      e   = Math_Ease(clamp(((t - 2.7) - 0.05 ang) * 0.25), 1)
+            - (t > 10 ? clamp((t - 32) * 0.2) : 0)
+      glEnable(GL_CULL_FACE); scale(e * 1.1 * 1.4)
+      glColor3f(0.7, 0.7, 0.6); Obj_Draw(hex4)
+
+   Eight hundred and forty small hexes fill a plane; the fragment
+   program keeps only those inside an ellipse,
+   length(world.xz * (0.6, 1)) <= 29.5, which is the TV's oval. The
+   cells ripple, turn and grow in from t = 2.7 [verified; observed,
+   src/rupture].
+
+   Uniforms on the fragment program: planecut = 11.2, which the
+   program never reads, ttime = t, and [verified, 0x004ae2b0..
+   0x004ae8f0]
+
+    T(a, b) = min(2 sin(pi clamp((t - a) b)), 1)
+    multip  = T(28, 0.4) * 0.3 + T(7, 0.6) + T(10.7, 0.45)
+              + T(16.2, 0.55) + T(21, 0.5) + 0.1 + 3 clamp(t - 29)
+
+   five swells of the TV's brightness and a flare from t = 29; 0.1
+   at t = 10.29, as read [observed]. The fragment program also adds a
+   band from marmaro.jpg, the box's material, thresholded at 3.05
+   [verified, the file]. Both of part_video's pairs also get texture
+   849 on their texture sampler; in both programs that sampler feeds
+   only normal and mx, which reach no output (the line that used mx is
+   inside a comment), so what 849 holds does not show [verified, the
+   files].
+
+   3.2.  The room: walls2, walls, room2
+
+   One pair, this+0x1164, and one fragment uniform, ttime, which is
+   a dissolve threshold (4). walls2 [verified]:
+
+    ttime = max(0.2 (t - 0), 0)^2,
+            or 10 - pow(max(1.6 (t - 22 + s), 0), 0.7) once t > 22 + s
+    GL_TEXTURE = translate(0, 57, -16.4)
+    glColor3f(0.7, 0.7, 0.6)
+
+   room2, k = 0 .. 2 [verified]:
+
+    ttime = max(0.2 (t - 5), 0),
+            or 10 - pow(max(1.6 (t - 22), 0), 0.7) once t > 22
+    GL_TEXTURE = translate(260 k, -220, -80)
+                 (k = 1: translate(0, 0, 60))
+                 scale(1) rotate(-10, z) rotate(90, y) rotate(90, z)
+    glColor3f(0.4, 0.7, 0.9)
+
+   and while t < 11 one more at translate(-400, 200, -80) turned -108
+   about z instead of -10. walls.obj is drawn as its pieces with the
+   same pair; at rest they make the room box and the wall of holes
+   [observed, src/rupture next to the demo]. How the pieces move is
+   3.4.
+
+   3.3.  Projection, clear colour, cameras
+
+    gluPerspective(Math_Ease(clamp(1.5 (t - 19) 1.5), 2) * -0
+                   + 55 + ctx+0x608e38, view aspect, near, far)
+    clear = f * (0.1, 0.13, 0.16),
+            f = clamp((t - 6) * 0.5) * 0.15 - 0.15 clamp((t - 36.1) * 0.5)
+
+   Frame sets near = 36 - clamp((t - 20) * 0.3) * 0.6 * 50, with no
+   ease, and far = 750 [verified]. The world's up is +z. Both pairs get
+   their matrices, CameraPos and LightPos from maybe_Scene_DrawLit:
+   the eye camera ctx+0x1848 and a light camera ctx+0x18a8 that
+   Frame copies from the eye and moves [verified]; section 5.
+
+   3.4.  The shards
+
+   The wall is broken in the modeller, not in code: walls.obj is a
+   list of groups, and Obj_MakeShards (0x004670e0) turns every group
+   but the last into one shard [verified]. A shard is a TETRAHEDRON
+   on four corners - the first face's c[0], c[1], c[2] and the second
+   face's c[1] - so at rest the pieces tile the wall, and once they
+   turn their sides show. Shard_Centre puts the centre, the mean of
+   the four, at +0x40 (moving) and +0x50 (rest) and makes the corners
+   relative; Shard_Normals gives each of the four faces its normal;
+   Shard_RandomSpin gives a random unit axis and a spin of
+   (Math_Random() + 0.3)^2 * 0.05 [verified]. Those draws come before Init's
+   _srand, from the CRT's stream as everything before part_video::Init
+   left it: seed 1, advanced by Tex_CreateTarget's noise fill of the
+   four render targets, w * h * 4 draws each at w/4 x h/4, w/2 x h/2
+   and twice w x h. So the axes and spins depend on the view size. At
+   800 x 450 (the dialog's 800 x 600 with Force 16:9) this gives shard
+   0's spin as 0.065890239, the value read from the running demo
+   [verified, the live read; the loop at 0x0044e770]. src/rupture
+   makes the same draws in the same order, so its shards are the
+   demo's at the same view size.
+
+   The launch, in part_video::Init after _srand(0xfcdd0218), per
+   shard [verified, 0x004b1447..0x004b18d5]:
+
+    Math_Random()                          drawn and discarded
+    d = rest - (0, 57, -16.4) - (80, 60, -70)
+    v = normalize(d) * 250 + (r3, r2, r1) * 120 + (0, -150, 0)
+                                           rN = 2 Math_Random() - 1,
+                                           in draw order
+    if rest.x < -120:  v = (20 Math_Random() + 200, 0, 70)
+    a = (0, 0, -90)
+
+   so the pieces fly out from one point behind the wall, and those on
+   the far left are thrown sideways instead.
+
+   THE FLIGHT IS COMPUTED ONCE, AT LOAD. Obj_BakeShards(12, 20) steps
+   every shard 240 times and records it: dt = 0.5 / 20, two
+   Shard_Step(dt) per record, and the first record written 11 times
+   so the path holds still at its start - 250 records, 0.05 s of
+   flight apart [verified]. A step:
+
+    a  += (0, -2, 0) dt
+    v  += a dt
+    v, a *= max(1 - 0.45 dt, 0)
+    pos += v dt
+    angle += |v| * spin * 0.3 * dt         while pos.y >= -11999.95
+
+   with a floor at y = -12000 that bounces (v.y * -0.59, v.x and v.z
+   * 0.89) and that nothing here reaches [verified, 0x00451210].
+   Shard_Record appends pos to one track and (angle, 0, 0) to another.
+
+   Each frame, Shard_Seek(s) reads the record back at a fractional
+   index s with Track_Eval, a Catmull-Rom through the records,
+   clamped to the ends, then turns the corners and normals by
+   Mat_FromEuler(angle * axis), which is Rx(a) Ry(b) Rz(c) with a, b
+   and c the angle times the axis's x, y and z [verified]. The draw
+   is one glBegin(GL_TRIANGLES) under GL_TEXTURE = translate(0, 57,
+   -16.4) and glColor3f(0.4, 0.7, 0.9), with the room pair still
+   bound, skipping any shard whose s is over 110. Each shard is four
+   triangles, V[k] the turned corner k plus pos [verified,
+   0x004afa3b..0x004b01ad]:
+
+    N0: V0 V1 V2    N1: V0 V1 V3    N2: V0 V2 V3    N3: V1 V2 V3
+
+   N0 and N3 are the normalised edge crosses negated, so each normal
+   faces out of its face [verified, Shard_Normals].
+
+   s is the choreography: each shard's own delay from t and the
+   distances of its REST centre to five points. With e = rest - (0,
+   57, -16.4) and e1 = e - (-127, -66.5, 27) [verified,
+   0x004af210..0x004afa03]:
+
+    q  = |e1|                              * 0.4 * 0.2 * 0.5 * 4.4
+    m1 = |e - (90, -60, 60)|               * 0.4 * 0.1
+    m2 = |e - (117, -100, 3)|              * 0.4 * 0.1 * 1.4
+    m3 = |rest - (0, 57, 16.4) - (-3, -70, 0)| * 0.4 * 0.1
+    m4 = |(-28, -49, 27) - e1|             * 0.4 * 0.1
+
+    m  = min(m1, m2), or 1e8 if m3 * 1.48 < m
+    A  = min(max(t + 11 - min(m * 2.2 * 0.2, q), 0) * 20 * 0.02, 10.05)
+    B  = max(t - 4 - 4 m, 0) * 20 * 0.18
+    C  = (t - 24) * 15 * clamp((t - 24) * 0.35) / (m4^3 + 0.1)
+    s  = Math_Ease(A / 10.05, 2) * 10.05 + B + C
+
+   The 20 is k_dbl_20, picked by a test of FUN_00401590(u) * 0 + 1
+   against it, with u = max((t - 18) * 0.35, 0); the product is
+   always 1 and that test always picks 20, so u has no effect
+   [verified]. A shard near the reference points goes first; the far
+   ones wait. A brings every shard to s = 10.05, still inside the 11
+   identical first records, so nothing moves until B or C does: B from
+   t = 4 + 4m, C from t = 24 [inferred, the formulas].
+
+   src/gfx_test shows it: walls.obj's groups as shards, launched,
+   baked and replayed with this s on a clock of its own. At rest the
+   shards are the whole room, the holed wall included, and from t = 4
+   it comes apart [observed, gfx_test].
+
+   3.5.  The sky
+
+   After room2 [verified, 0x004b04fb..0x004b10b5]: _srand(0xa567),
+   the projection gluPerspective(65, aspect, 1, 1000) and the eye
+   camera, depth test on, and 2500 GL_POINTS of size 2 on a sphere of
+   radius 400, each grey g = (1 - clamp((t - 29) * 0.2)) (r + 0.2)
+   Math_Ease(clamp(0.3 t), 1) * 0.2. Then, before t = 30, additive
+   billboards (Gfx_DrawQuad keeps the modelview's translation and
+   drops its rotation): blob41b 50 across at a point seeded by
+   _srand(0x286182f), 400 out and raised 190; before t = 12 three
+   cloudt2 glows 150 across beside it, turned 122, 162 and 130
+   degrees; and a blob41b sun disc 117 across at (196.5, -40, -30) in
+   (clamp(t - 12) - clamp(t - 26), 0.8, 0.2), drawn while that is
+   over 0.0001. The stars use a different projection from the room,
+   so their depth test against it is meaningless; they show through.
+
+4.  Textures laid by world position
+
+   Every lookup below uses oThePos, the vertex position after
+   ModelViewObject - the world position - not the mesh's texture
+   coordinates [verified, the shader files]. A texture laid this way
+   stays where it is in the world while a mesh moves, turns or
+   scales through it: the mesh is drawn across a fixed sheet.
+
+    TV, 2hh     cc = tex2D(decal, world.xz * 0.016 * (0.8, 1)
+                       + (dist, 0) + 0.5 + (0, -0.1)).x
+                colour += cc * (1, 1.4 - 20 dist, 1.9) * 0.36
+                dist = a product of four sines of 1.4 world.z and
+                       ttime, cubed, * 0.04 * multip
+                decal = the current video frame
+
+   The picture on the TV is the video laid flat over world x and z
+   and rippled by dist; the hex cells only show where it falls.
+
+    room, 2box  discard where 400 * pow(tex2D(decal, world.xz
+                * 0.00003).y * tex2D(decal, world.xy * 0.00005).y, 6)
+                > ttime
+                discard where world.y > 5 and sin(0.07 world.z)
+                * cos(0.07 world.x + 0.1 world.y) < -0.3
+                decal = textures/bg08.jpg
+
+   The first is a dissolve: ttime rising lets more of each surface
+   survive, ttime falling after t = 22 eats it away, and where it
+   eats is fixed in the world by bg08's bright patches. The second
+   cuts a lattice of holes through anything above y = 5: the wall of
+   oval holes is that lattice, not modelled geometry.
+
+   The motor part's road does the same with its blue speckle:
+   mul1 = bg08(world.xz * 0.03).x * bg08(world.xy * 0.03).y, raised
+   to the 6th power, so it shows only where both lookups are bright
+   (effects/motor.txt 2.2).
+
+   The samplers come from maybe_Mesh_Draw: decal and light from
+   maybe_Scene_DrawLit's arguments, texture and texture2 from the
+   material of the mesh it draws [verified]. On the TV pair decal is
+   the video frame, light bg08, texture2 meshes/marmaro.jpg; on the
+   room pair decal and light are both bg08 [observed, the shim agent
+   at t = 10.29].
+
+5.  Frame and the post chain
+
+   part_video::Frame runs while started[0] and not done[0]
+   (subsystems/parts.txt 2). Its clock t (this+0x1b8) starts at 0 in
+   Init and gains the frame delta; from t = 29 the shared delta itself
+   is first multiplied by 1.1, so the part's last ten seconds run
+   fast [verified, 0x004f6120, 0x004f4648]. At t = 39 it hands over.
+   Every Frame of a pass takes the same delta, so in the frame of the
+   hand-over part_motor's first Frame runs on the scaled delta too, and
+   part_motor's clock starts 1.1 frames past its -35 rather than one
+   [verified, the shared argument; observed, the agent's t]. The near
+   plane is 3.3's.
+
+   5.1.  The camera
+
+   Three Camera_Set calls write the eye camera in a row; the first two
+   read seq+0 and seq+8 (copied to this+0x348; always 0, see
+   subsystems/parts.txt 3) and are overwritten unseen. The third, and
+   a second camera made with Camera_Init, are blended by Camera_Lerp
+   [verified, 0x004b1b54..0x004b1fb6]:
+
+    v   = 10 t
+    A   eye (320 - v, 1.5 v + 120, 0)   target (0, 0, -50)
+        up (0, -0.2, 1)
+    T2  = t - Math_SoftRamp(max(t - 27, 0) * 0.5)
+    E   = t >= 29 ? 20 Math_Ease(clamp((t - 29) * 0.3), 2) : 0
+    q   = 2 - (t - 7 + E) * 0.15
+    e2  = Math_Ease(clamp((t - 22) * 0.15), 1)
+    B   eye (50 q, 390 - 9 (T2 - 4), -19.5 e2)   target (0, 0, 0)
+        up (0 sin T2, 0.1, 1)
+    cam = A + (B - A) Math_Ease(clamp((t - 5) * 0.1), 1)
+
+   Math_SoftRamp(u) is pow(u / 2, 2.2) blending into u as 0.3 u goes
+   from 0 to 1 [verified, 0x00401590]. The camera slides from A
+   toward B over t = 5 .. 15 while both move; after t = 29 the eye
+   pulls back along x.
+
+   5.2.  The shake
+
+   Init loads meshes/try1.sav into a path at this+0x20 (Path_Load):
+   950 records of float x, y, z and two doubles, the last pushed
+   twice by an feof loop, so 951 entries. Each frame [verified,
+   0x004b1fbb..0x004b22af]:
+
+    F   = normalize(target - eye),  R = F x up
+    i   = trunc(35 t) % 950
+    w   = 3 sin(pi clamp((t - 29.5) * 0.3))
+    a   = 0.011 + 0.6 w * 0.011,  b = (w + 1) a
+    target += R x_i b + up y_i b
+    RightV = x_i * 1.1 a * 0.01 * 0.8,  UpV likewise with y_i
+
+   so the camera's aim wanders by the recorded hand-held path at 35
+   records a second, and the same values steer bend3's directional
+   blur. After t = 29.5 w swells the wander up to four times. A term
+   adding sin(...) * 0.5 * 0 to up.x, and the smoothed tracks
+   Path_Load builds, change nothing [verified]. All of 5.1 and 5.2
+   reproduce the camera, light and RightV/UpV read at clock 10.29 (6)
+   to float precision [observed].
+
+   The light camera is the eye camera with its eye moved by
+   30 * -14 = -420 in x (0x004f47dc, 0x004f4f74).
+
+   5.3.  The post chain
+
+   DrawScene draws into target 0, then the chain of effects/look.txt
+   3: blur (this+0x19c), the edge pass (this+0x1a8), blur six times,
+   bend3 (this+0x1a0), then target 0's texture added to the window in
+   white. The half- and quarter-size textures are bound first, the
+   second with glColor3f 0.15 (0x004f3760), but each bind and colour
+   is replaced before the one quad is drawn [verified]. bend3's
+   alpha is
+
+    (1 - Math_Ease(clamp((t - 2) * 0.4), 1)) * 0.5 + 0.15
+    + 0.6 Math_SoftRamp(max((t - 35) * 0.5, 0))
+
+   [verified, 0x004b239d..0x004b24b6].
+
+   Frame brackets everything in glPushAttrib(GL_ALL_ATTRIB_BITS) and
+   glPopAttrib, so each frame starts with Demo_InitGL's depth test
+   (GL_LEQUAL) and the matrix mode it began in, although Frame turns
+   depth testing off after DrawScene [verified]. Its matrix pushes
+   balance only if that mode is GL_PROJECTION: Frame's first push then
+   lands on the projection stack, where the sky's stray pop takes it
+   off, and the sky's unpopped modelview push is undone by Frame's
+   closing pops. Started in GL_MODELVIEW, the modelview stack would
+   fill within 32 frames and maybe_Scene_DrawLit would hand the TV a
+   stale view; the demo's TV plays throughout, so the mode is
+   GL_PROJECTION [inferred; which Init leaves it so is unread].
+   src/rupture reproduces the demo's frames at clock 10.29 and 17
+   [observed, side by side], and at every 6 s checkpoint from t = 3 to
+   39 at the 800x450 view matches the original to a mean of 0.21 per
+   8-bit channel or less [observed, the agent pipe on both].
+
+6.  Values read from the running demo
+
+   Paused at clock 10.29 [observed, the shim agent]:
+
+    t           10.2864424
+    eye         139.87285 306.51602 0         ctx+0x184c
+    target      0.5519681 -0.26115873 -22.489803
+    up          0 -0.036520034 1
+    light eye   -280.12714 306.51602 0        ctx+0x18ac
+    ctx+0x608e38 0, +0x608e40 36, +0x608e48 750, +0x608e50 1
+    TV          planecut 11.2, ttime 10.286, multip 0.1
+    room        ttime 4.2324 (walls2), 1.0573 (room2)
+    bend3       alpha 0.15, RightV -0.0053368533, UpV 0.00239985894
+
+   The two room ttime values are the formulas of 3.2 at that t.
+
+7.  Open questions
+
+   o None known for what part_video draws; the shared ones are in
+     effects/look.txt 7.

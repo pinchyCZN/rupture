@@ -1,0 +1,190 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                       THE DEMO CLOCK AND THE MUSIC
+
+
+Abstract
+
+   One double, g_demoClock, is the demo's time in seconds. Demo_Frame
+   advances it by a QueryPerformanceCounter delta and, for the first
+   230 seconds, pulls it toward the MP3's play position. Every part
+   advances its own local clock by the same delta. The demo carries
+   two developer facilities for jumping in time - a start-section
+   table and a recorded-state replay on the number keys - both
+   switched off in the release by initialised data.
+
+Table of Contents
+
+   1. The frame delta
+   2. Following the music
+   3. What else the clock drives
+   4. The developer time jumps
+      4.1. The start-section table
+      4.2. Recorded state and the number keys
+   5. Points of control
+   6. Open questions
+
+1.  The frame delta
+
+   Timer_Seconds (0x004028b0) accumulates QueryPerformanceCounter
+   deltas over QueryPerformanceFrequency into g_timerSeconds and
+   returns it [verified]. Demo_Frame and Demo_Init are its callers
+   [verified, cross-references].
+
+   Demo_Frame (0x00447b40) computes [verified, the disassembly]:
+
+    g_frameDt          = Timer_Seconds() - g_lastTimerSeconds
+    g_lastTimerSeconds = Timer_Seconds()
+    g_frameDt          = max(g_frameDt, 0)
+    ... music correction, section 2 ...
+    g_demoClock       += g_frameDt
+
+   and passes &g_frameDt to every part's Frame as its dt
+   (subsystems/parts.txt 1).
+
+   WinMain calls Demo_Frame only while g_windowActive, which
+   Window_Proc sets from WM_ACTIVATE [verified]. While the window is
+   inactive nothing advances, but the music plays on and the next
+   delta spans the whole gap, so the clock jumps forward on return
+   [inferred, from the two facts above].
+
+2.  Following the music
+
+   With maybe_g_musicEnabled at 1 [verified, the disassembly]:
+
+    g_musicSeconds = FSOUND_GetCurrentPosition(0)
+                     / FSOUND_GetFrequency(0)
+    if g_musicSeconds > length / frequency - 5
+        g_musicSyncOn = 0                      latches off
+    if g_musicSyncOn and g_demoClock < 230
+        g_frameDt += 0.1 * (g_musicSeconds - g_demoClock)
+
+   so each frame closes a tenth of the gap to the music. The 0.1 is
+   the double at 0x004f3cb0 and 230 the one at 0x004f40c0. A second
+   correction, 0.05 times the same gap (0x004f40d0), is computed and
+   never used. After 230 seconds the clock runs on the performance
+   counter alone. g_musicSyncOn (0x0050bbda) is initialised to 1.
+
+   Channel 0 is the music channel: every position call names it
+   [verified]. The demo converts between time and position with
+   44100 samples per second, the double at 0x004f40a0 [verified].
+
+3.  What else the clock drives
+
+   Before the parts run, Demo_Frame seeds the C runtime's generator
+   with srand((int)(g_demoClock * 1e6)) and draws fifty rand()
+   values [verified]. Any rand() a part calls afterward is therefore
+   a function of the clock, not of how many frames have passed
+   [inferred].
+
+   The FFT spectrum, FSOUND_DSP_GetSpectrum, is copied each frame
+   into 512 floats at g_seqSpectrum, 0x005148f0 = seq+0xb0 [verified].
+   Nothing reads it: no instruction refers to the array but
+   Demo_Frame's copy, and each part's maybe_Seq_Copy of g_seq carries
+   it into the part, where no method reads that range [verified, the
+   cross-references to every element and each part's disassembly].
+   No effect follows the music's spectrum.
+
+   When g_demoClock passes 401 (0x004f4070), Demo_Frame closes FMOD
+   and the window and exits [verified]. Escape - g_keys[VK_ESCAPE],
+   0x0051457b - makes WinMain set g_fadeOut and g_fadeStartClock;
+   Demo_Frame then fades the volume and a black quad at g_fadeRate
+   (2.5, initialised data at 0x0050bbd0) per second and exits [verified].
+
+4.  The developer time jumps
+
+4.1.  The start-section table
+
+   g_startSection (0x0050bbe0) is initialised to -4 and nothing
+   writes it [verified, its cross-references]. On the first frame,
+   if it is greater than -1, Demo_Frame sets g_demoClock from
+
+    1  32.2     0x004f4098
+    2  74.1     0x004f4090
+    3  130      0x004f4088
+    4  209      0x004f4080
+    5  296.88   0x004f4078
+
+   and seeks the music to g_demoClock * 44100 [verified]. It does
+   not touch the relay flags or any part's clock, so on its own it
+   moves the music and the global clock but not the part on screen
+   [inferred, from what it writes].
+
+4.2.  Recorded state and the number keys
+
+   Two more bytes, both zero-initialised and never written by the
+   code [verified, cross-references]:
+
+   +---------------------+------------+-------------------------------+
+   | Byte                | Address    | When set                      |
+   +=====================+============+===============================+
+   | maybe_g_stateRecord | 0x005146a4 | each frame, push every part's |
+   |                     |            | started and done flags and    |
+   |                     |            | the double at its +0x10;      |
+   |                     |            | save state.txt when the clock |
+   |                     |            | passes 450 or on the Esc fade |
+   +---------------------+------------+-------------------------------+
+   | maybe_g_stateReplay | 0x005146a5 | Demo_Init loads state.txt;    |
+   |                     |            | each frame, key '0' + i held  |
+   |                     |            | restores the state recorded   |
+   |                     |            | at time T[i] and seeks the    |
+   |                     |            | music to T[i] * 44100         |
+   +---------------------+------------+-------------------------------+
+
+   T is built on the stack: 25, 146, 165, 200, 302, 265, 287, 293
+   for keys 0 to 7 [verified]. Keys 8 and 9 index past that table
+   into other stack slots [verified, the offsets]. state.txt is not
+   in the release [verified, directory listing].
+
+   The flags restored are g_seqPartStarted and g_seqPartDone
+   (subsystems/parts.txt 2). Whether a part's +0x10 double is its
+   clock is open: part_motor keeps its clocks at +0x210 and +0x218.
+
+5.  Points of control
+
+   The addresses a tool needs to hold or move the demo's time, all
+   fixed because the image has no relocation flag
+   (overview.txt 2) [verified unless tagged]:
+
+    00448dd3  CALL Demo_Frame in WinMain's loop, a 5-byte E8
+    004028b0  Timer_Seconds, entry; result on the x87 stack
+    005146c8  g_demoClock          double
+    005146c0  g_frameDt            double
+    005146d0  g_lastTimerSeconds   double
+    0050bbda  g_musicSyncOn        byte
+    00514840  g_seq                the relay flags, parts.txt 2
+    00b1e598  g_partTimeCarry      double
+    0051276c  g_parts[9]           part object pointers
+    00514560  g_keys[256]          by virtual-key code
+    00514664  g_musicSample        the FSOUND sample handle
+
+   A clock that Timer_Seconds stops advancing gives a delta of zero
+   to the global clock and to every part at once [inferred, section
+   1]. The music has to be stopped with it, or the correction of
+   section 2 keeps pulling the clock forward for the first 230
+   seconds [inferred, section 2]. With both held - Timer_Seconds
+   replaced at its entry and FSOUND_SetPaused(-3, 1) - g_demoClock
+   stops and advances again on release, but it is not always exactly
+   still: one two-second hold read 4.458 at both ends, another went
+   5.637, 5.632, 5.619 [observed, src/shim, windowed runs]. A frame
+   delta of zero leaves the section 2 correction running, which would
+   draw the clock to the paused music's position [inferred].
+
+   With g_musicSyncOn held at 0 as well, the clock is exact: a
+   Timer_Seconds that advances by 1/60 once per frame (on Demo_Frame's
+   first call, at 0x00447b76) moves g_demoClock and the running part's
+   clock by exactly that: 60 frames take it to 1.000000, and
+   part_motor reaches t = 5.247628 on frame 4700 at clock 78.320962,
+   the same frame and clock as the reconstruction under the same step
+   [observed, the shim's fixed-step mode]. Nothing else feeds the
+   delta: the seq+0x10 scale is 1 (subsystems/parts.txt 3).
+
+6.  Open questions
+
+   o What maybe_State_Restore (0x00465b80) looks up: the nearest
+     recorded frame, or an exact one.
+   o What each part keeps at +0x10, and whether restoring it alone
+     resumes a part mid-way.
+   o What the start-section times correspond to: they do not match
+     the part boundaries the relay implies (subsystems/parts.txt 2).

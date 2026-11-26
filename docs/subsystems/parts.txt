@@ -1,0 +1,231 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                       PARTS AND HOW THEY ARE SEQUENCED
+
+
+Abstract
+
+   Every part is a C++ object with two virtual methods: Init, called
+   once while the loading screen shows, and Frame, called every frame
+   whether or not the part is on screen. Each part gates itself on
+   flags in a shared sequence object, runs its own clock, and hands
+   over to the next part by setting a flag and passing on the time
+   it overshot by. There is no central scene switch.
+
+Table of Contents
+
+   1. The two methods
+   2. The relay
+   3. Time inside a part
+   4. Shaders and meshes
+   5. Open questions
+
+1.  The two methods
+
+   Every part class derives from one base, parts: single, non-virtual
+   inheritance, read from each class hierarchy descriptor [verified].
+   Init and Frame are virtual. The C++ beyond that is the standard
+   library - std::vector, std::string, fstream - which is where the
+   templates are [verified, RTTI and namespaces].
+   A std::vector is 0x18 bytes with its first, last and end pointers at
+   +0xc, +0x10 and +0x14, the same in every container met so far -
+   Obj_Mesh's groups, a group's faces, the shards and the tracks
+   (Rupture_Vec4Vector) [inferred, Vec4Vector_PushBack and Track_Eval].
+
+   Each part vtable is a complete object locator followed by two
+   slots [verified, .rdata 0x004f3ed8..0x004f3f44]:
+
+   +------------+-------------+-------------+
+   | Class      | Frame (0)   | Init (1)    |
+   +============+=============+=============+
+   | part_start | 0x0049f830  | 0x0049f800  |
+   +------------+-------------+-------------+
+   | part_game  | 0x00487720  | 0x004870e0  |
+   +------------+-------------+-------------+
+   | part_video | 0x004b19c0  | 0x004b10c0  |
+   +------------+-------------+-------------+
+   | part_motor | 0x004938a0  | 0x00493230  |
+   +------------+-------------+-------------+
+   | part_truck | 0x004ab200  | 0x004aa5e0  |
+   +------------+-------------+-------------+
+   | part_rail  | 0x0049d280  | 0x0049cb50  |
+   +------------+-------------+-------------+
+   | part_boat  | 0x0046fe00  | 0x0046f920  |
+   +------------+-------------+-------------+
+   | part_city  | 0x00477450  | 0x00476630  |
+   +------------+-------------+-------------+
+   | part_end   | 0x0047f4e0  | 0x0047dd60  |
+   +------------+-------------+-------------+
+
+   Demo_Init calls Init once per part (subsystems/startup.txt 4);
+   Demo_Frame calls Frame on every built part, every frame
+   [verified].
+
+   Frame takes (this, double *dt, ctx, seq): &g_frameDt, the render
+   context at 0x00515608 and g_seq at 0x00514840, pushed in that
+   order at every call in Demo_Frame [verified, the disassembly].
+   ctx+0x14 is g_sequence (0x0051561c), and part_motor::Frame stores
+   seq there on entry [verified].
+
+2.  The relay
+
+   part_motor::Frame is the part read so far. Its gate, its hand-over
+   and its clock [verified]:
+
+    if (seq->mode(+0xac) != 1 ||
+        (seq->+0x49 && !seq->+0x69)) {
+        local  += *dt                    this+0x218, floor 0x004f6130
+        t       = local + g_partTimeCarry   this+0x210
+        if (t >= END)                    END = double at 0x004f6120
+            g_partTimeCarry = t - END
+            seq->+0x69 = 1               this part is done
+            seq->+0x4a = 1               the next part may start
+            return
+        ... draw at time t ...
+    }
+
+   seq+0x48 is g_seqPartStarted and seq+0x68 g_seqPartDone, one byte
+   per g_parts slot. Every part's Frame has the same gate: run while
+   started[i] and not done[i]; on reaching its end set done[i] and
+   started[i+1] [verified, the gate of each Frame]. Demo_Init sets
+   started[0] [verified]. That fixes the running order:
+
+    slot  part        tests       sets
+    0     part_video  +0x48 +0x68 +0x68 +0x49
+    1     part_motor  +0x49 +0x69 +0x69 +0x4a
+    2     part_truck  +0x4a +0x6a +0x6a +0x4b
+    3     part_rail   +0x4b +0x6b +0x6b +0x4c
+    4     part_boat   +0x4c +0x6c +0x6c +0x4d
+    5     part_city   +0x4d +0x6d +0x6d +0x4e
+    6     part_end    +0x4e +0x6e +0x6e +0x4e
+
+   part_end sets its own started flag again rather than a next one
+   [verified]. part_start is the loading screen and is not in the
+   relay (subsystems/startup.txt 4).
+
+   seq+0xac is g_seqRelayMode. Demo_Frame sets it to 1 on the normal
+   path and 0 on the maybe_g_demoMode == -1 path [verified]; with it
+   at 0 a part runs regardless of the flags.
+
+   The Init calls do not see g_seq. Before constructing the parts,
+   Demo_Init allocates a second 0xdc8-byte sequence object, points
+   ctx+0x14 at it and sets its relay mode: 1 on the normal path
+   (0x0044768f), 0 on the demo mode -1 path [verified]. Every Init
+   but part_video's makes the render targets only with ctx+0x14's
+   relay mode 0, so on the normal path part_video::Init alone makes
+   them, which is why their textures are GL names 4 and 5 [verified,
+   the gates; observed, the names]. Each Frame then points ctx+0x14 at
+   g_seq. Tex_CreateTarget fills a target with _rand() noise, so the
+   skipped calls are also millions of rand() draws not made: part_end,
+   whose Init has no srand, depends on it (effects/end.txt).
+
+   The parts keep their clocks at different offsets - part_motor at
+   +0x210 / +0x218, part_truck at +0x310 / +0x318, part_rail at
+   +0x318 / +0x320, part_boat at +0x2d8 / +0x2e0, part_city at
+   +0x328 / +0x330, part_end at +0x348 / +0x350 [verified, the head of
+   each Frame]. part_truck hands over at t = 66, part_rail at 65,
+   part_boat at 54 and part_city at 59 (effects/truck.txt,
+   effects/rail.txt, effects/boat.txt, effects/city.txt). part_end
+   stops at t = 54 without carrying the overshoot, and the demo exits
+   on the clock before then (effects/end.txt 3.3).
+
+   g_partTimeCarry (0x00b1e598) is the overshoot carried across a cut,
+   so a part starts at exactly the time its predecessor ended rather
+   than at the next frame boundary [verified]. Demo_Init zeroes it.
+
+   The demo clock itself is Demo_Frame's: a frame delta, corrected
+   against the FMOD play position for the first 230 seconds
+   (subsystems/clock.txt). A part's time is therefore music time,
+   which is what keeps the cuts on the beat [inferred].
+
+3.  Time inside a part
+
+   Within a part the structure is a list of time windows. part_motor
+   has fourteen, each of the form
+
+    if (T0 < t && t < T1)
+        Camera_Set(eye, target, up)      ctx+0x1848 / 0x1858 / 0x1868
+
+   with T0, T1 and every coefficient a double in .rdata between
+   0x004f36d0 and 0x004f6130 [verified]. Many are shared across
+   windows - the end of one window is the start of the next. The
+   camera path is hand-keyed in code, not read from a file.
+
+   Later windows also switch render settings - which textures are
+   combined, at what gain - by the same test [verified].
+
+   Init sets both clocks to the double at 0x004f5d78 before
+   returning, so a part's local time does not start at zero
+   [verified].
+
+   Each frame, before any part runs, Demo_Frame stores 0 in seq+0,
+   seq+8, seq+0x10 and seq+0x28 (0x00447d6c..0x00447da1); nothing else
+   in the exe writes them by address, and Window_Proc only formats the
+   first three as text [verified, their cross-references]. part_video
+   runs first and does not write them, so part_video and part_motor
+   always read 0 there: part_video's copies of the first three are 0,
+   and part_motor's clock replacement on seq+0x28 non-zero
+   (this+0x328 * 4 - 20) never runs [inferred, from the run order].
+   Demo_Frame also scales the frame delta by seq+0x10 * 0 + 1 and
+   would set it outright if seq+0x10 were negative; with seq+0x10 at
+   0 the delta passes through.
+
+4.  Shaders and meshes
+
+   Init loads everything the part draws. Meshes are .obj files read
+   by Obj_Load into a global object per mesh, formats/obj.txt
+   [verified]. Shaders are Cg source
+   files [verified]:
+
+   +---------------------------+---------------------------------------------+
+   | Function                  | Does                                        |
+   +===========================+=============================================+
+   | Shader_LoadPair           | vertex file -> slot, fragment file ->       |
+   | 0x004bb640                | slot + 1; binds ModelViewProj,              |
+   |                           | ModelViewLightProj, ModelViewObject         |
+   +---------------------------+---------------------------------------------+
+   | maybe_Shader_LoadFragment | (ctx, fragment file, slot) - a post pass    |
+   | 0x004bb600                | [inferred from its call sites]              |
+   +---------------------------+---------------------------------------------+
+   | Shader_SetParam1f         | (ctx, slot, name, double *) ->              |
+   | 0x004bb070                | cgGLSetParameter1f                          |
+   +---------------------------+---------------------------------------------+
+
+   Under those sit the Cg calls themselves, each a named function in
+   the database [verified]:
+
+   +-------------------------+-----------------------------------------+
+   | Function                | Cg call                                 |
+   +=========================+=========================================+
+   | Shader_CreateVertex /   | cgCreateProgramFromFile(ctx, 0x1010,    |
+   | Shader_CreateFragment   | file, profile, NULL, args); args is     |
+   |                         | {"-po", "ATI_draw_buffers"} for a       |
+   |                         | fragment program on ATI, else NULL      |
+   +-------------------------+-----------------------------------------+
+   | Shader_LoadVertex /     | compile if needed, cgGLEnableProfile,   |
+   | Shader_LoadFragment     | cgGLLoadProgram                         |
+   +-------------------------+-----------------------------------------+
+   | Shader_SetMvpMatrix     | state matrix 7 (modelview-projection)   |
+   +-------------------------+-----------------------------------------+
+   | Shader_SetTextureMatrix | state matrix 6 (texture)                |
+   +-------------------------+-----------------------------------------+
+
+   The texture-matrix route is how per-object transforms reach a
+   shader: maybe_Mesh_Draw builds the object's translate, rotate and
+   scale in the GL texture matrix and captures it as ModelViewObject;
+   maybe_Scene_DrawLit builds the light's projection there and
+   captures it as ModelViewLightProj. ModelViewProj is the camera
+   alone [verified].
+
+   A missing shader file stops the demo with "= LifeForce. ASD 2007 =
+   - File is missing !": this loader is carried over from ASD's 2007
+   demo [verified, the string].
+
+   Which files each part loads is in its Init's plate comment.
+   effects/motor.txt reads the ones part_motor uses.
+
+5.  Open questions
+
+   o Whether a later part writes seq+0..+0x28 through its seq
+     argument within a frame; only the parts after it would see it.

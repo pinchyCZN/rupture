@@ -1,0 +1,333 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                         PART_CITY: THE CITY
+
+
+Abstract
+
+   part_city is slot 5 of the relay. It runs from t = 0 to t = 59 on
+   its own clock and hands over to part_end. Its Init loads meshes
+   named for a city, a helicopter and their wrecks, two of them broken
+   into shards; its Frame keys nine camera windows on t over
+   part_boat's post chain. DrawScene draws a sun and glows, the city
+   and its water, five tablets, and from t = 32 the city breaking into
+   shards; then the sections of 4.2.
+
+Table of Contents
+
+   1. What it draws
+   2. Init
+      2.1. The shards
+   3. Frame
+      3.1. The clock
+      3.2. The cameras
+      3.3. The shake and the light camera
+      3.4. The post chain
+   4. DrawScene
+      4.1. The sky, the city and its fall
+      4.2. The boat, the helicopter and the stars
+   5. Reconstruction notes
+   6. Open questions
+
+1.  What it draws
+
+   Init loads boat.obj, helicopter.obj, hellicrash2.obj, helix.obj,
+   Hellidist.obj, city1.obj, city_less.obj, citywater.obj,
+   citycrash.obj and tablet.obj [verified, part_city::Init]. Which of
+   them DrawScene draws, and how, is section 4.
+
+2.  Init
+
+   part_city::Init (0x00476630) is part_boat::Init's shape in the slot
+   band 0: texBase (this+0x3b8) and model (this+0x1394) are 0. The
+   render targets are made only with seq->relayMode 0; pattern5,
+   bg08, blob41b (through Tex_LoadWithAlpha, effects/boat.txt 5) and
+   cloudt2 go to texture slots 10, 0x5a, 0x14 and 0x1e [verified].
+   box.3ds is loaded through maybe_Shader_LoadPairWithModel with the
+   first pair, as in the other parts. The pairs:
+
+    +0x13bc  2     vertex_projection_anisotropic
+                   fragment_projection_anisotropic2h
+    +0x13c4  0x30  vertex_boat   fragment_boat
+    +0x13c8  0x2a  vertex_boat2  fragment_city
+    +0x318   0x56  vertex_boat2  fragment_city2
+    +0x13cc  0x26  vertex_boat   fragment_heli
+    +0x13d0  0x22  vertex_boat   fragment_train
+
+   and the post passes blur256 (+0x304, 0x17), blur256FOV (+0x30c,
+   0x1d), Blur_circular (+0x300, 0x15), bend3 (+0x308, 0x1f) and
+   wireframe (+0x310, 0x1b) [verified]. +0x13c0 (0x20) and +0x314
+   (0x19) are set and never loaded. try1.sav goes into the Path at
+   this+0x20. Both clocks start at 0 [verified].
+
+   2.1.  The shards
+
+   srand(0x2861f2e) and 106 rand() calls, then citycrash.obj is
+   broken into shards with spin 0.12 and Hellidist.obj with spin 5.0
+   (Obj_MakeShards, effects/video.txt 3.4). Each shard then gets its
+   own throw, with r a fresh Math_Random each time [verified]:
+
+    D = r^3 * 6,  P = (1.2 r)^17 + 2
+
+    citycrash   v = (2r - 1, 5r - 3, 4P) * 0.5 * 10     a = (0, -66, 0)
+    Hellidist   v = (4r - 2 - D, 9r - 2, 8r - 4) * 0.2   a = (10, -6, 0)
+
+   Before that each loop builds (rest - (-3.71, 1.81, 0)) P + (0, 3, 0)
+   and then (4r - 2 - D, 9r - 2, 8r - 4), and overwrites both before
+   storing; the randoms they draw still move the stream [verified].
+   Each mesh is then baked with Obj_BakeShards(6, 20).
+
+3.  Frame
+
+   3.1.  The clock
+
+   part_city::Frame (0x00477450) gates on started[5]/done[5].
+   maybe_Seq_Copy copies the sequence record into this+0x5a8, so the
+   head is h0, h1, h2 at this+0x5a8..0x5b8 and this+0xe60 is the
+   previous frame's partClock (effects/boat.txt 3.1). t (this+0x328)
+   is tLocal (this+0x330) + g_partTimeCarry, h0 * 5 when seq+0x28 is
+   set, and held at -0.0 (0x004f5010) at least [verified].
+
+   nearZ is h2 * 10 + 1.5, 29.5 for 32 <= t < 42, then + 0.4, - 0.3
+   for 15 <= t < 22 and + 6 from t = 32; farZ is 2300 [verified]. At
+   t = 59 (0x004f52a8) the overshoot goes to g_partTimeCarry and
+   part_end starts [verified].
+
+   3.2.  The cameras
+
+   One base camera from the seq head, eye (sin h0, h1 128 / r,
+   cos h0) with r = 80 h2 + 10, then windows tested on t [verified]:
+
+    -10 .. 3    eye at radius 5 round the y axis at height
+                1336 - 94 t, target (0, 1340 - 105 t, -t)
+    3 .. 5      eye at radius 80 - 5 (t - 3) round (129, 285, -73),
+                target (129, 269, -90)
+    5 .. 15     radius 10 round (129, 275.8, -73), then Camera_Lerp
+                to a camera at (92, 420, 20 (t - 5) - 70) by
+                Ease(Clamp01((t - 5) 0.08), 2)
+    15 .. 22    radius 6 round (-10, 96.8 + 0.8 (t - 15) + 2.4,
+                50 (t - 15) - 149), target (-10, 101.8, the same z),
+                up (0, 1, -0.4)
+    22 .. 32    the same round z = 50 (t - 15) - 963 at height 99.97,
+                eased down 1.6 over t = 28..32, up (0, 1, 0.6)
+    32 .. 36    (-353, 255, -152) + ((-96, 150, -408) - that) times
+                1.7 + 0.05 (t - 32), plus (22, 50, 56 (t - 32)),
+                target (-96, 150, -408)
+    36 .. 42    radius 490 round (0, 150, 0) at height 260
+    42 .. 45    radius 140 round (26, 45, 150)
+    45 .. 145   eye (276, 155, 20 (t - 45) - 150), z plus
+                10 SoftRamp((t - 47) / 2) from t = 47, target
+                (176, 155, z + 60); from t = 54 the eye is raised 12
+                and the eye z and target x move 60
+
+   The sums are the demo's Vec4 operators (Vec4_OpAdd 0x004013a0,
+   Vec4_OpSub, Vec4_OpScale), float component by component; the
+   exact expressions are in the source [verified].
+
+   3.3.  The shake and the light camera
+
+   part_boat's shake on try1.sav: the path index trunc(35 t) mod n,
+   trunc(35 (t + 3)) from t = 54. The depth is 0.008, 0.08 from t > 34,
+   halved from 36, times 5 for 42 <= t < 45 and times 1 + 2
+   Clamp01(t - 49) from 49; the up tilt is sin(1.71887 a depth) 0.05
+   times 1, 0 from t = 36 and 1.2 for 42..45. RightV and UpV scale
+   with 1.6, 0.224 from t > 34 [verified].
+
+   The light camera is the eye camera with its eye moved by
+   (30, 0, 0) * -14 [verified].
+
+   3.4.  The post chain
+
+   part_boat's: blur256 to the half target, wireframe, blur256 six
+   times, bend3 and the composite. bend3's alpha is
+   (1 - Ease(Clamp01(t - 0.1), 1)) 0.4 + 0.15; RightV and UpV double
+   from t = 54. The composite's quarter layer is grey 0.15, and the
+   main layer fades in over t = 0.1..1.1 and out over 51..53, then
+   to 0.35 over 54..55 and out over 56..58 [verified]. Unlike
+   part_boat there is no ttime.
+
+4.  DrawScene
+
+   part_city::DrawScene (0x00471a30) does not read its pass argument.
+   Its lit sections are part_boat's bracket (effects/boat.txt 4): no
+   push and pop round maybe_Scene_DrawLit, ctx+0x1918, +0x1920 and
+   +0x1930 written, and bg08 (slot texBase + 0x5a) passed as both
+   textures; after the binds each turns GL_CULL_FACE on [verified].
+   At entry it keeps t >= 22 in a stack byte, read only by the
+   sections of 4.2, and sets a stack Vec4 to (1, 0, 0, 0) [verified].
+
+   4.1.  The sky, the city and its fall
+
+   The projection is 55 degrees plus ctx+0x608e38 minus five terms:
+   Ease(Clamp01(2.25 (t - 19)), 2) times -0.0, which is always 0;
+   30 Ease(Clamp01(0.6 (t - 48.5)), 1); 11 sin(pi Clamp01(0.3 (t -
+   9.4))); before t = 32, 50 Clamp01(0.3 (t - 30.5)); from t = 32,
+   30 (1 - Clamp01(0.3 (t - 31.5))) [verified]. So the view narrows
+   to 44 degrees at t = 11.1 and is back at 55 by t = 12.7; it
+   closes to 32.5 over t = 30.5..32, opens again from 29.5 to 55 over
+   t = 32..34.8, and narrows to 25 over t = 48.5..50.2. The aniso2h
+   pair's planecut is 11.2 and the heli pair's ttime 0.
+
+   The clear colour is k (0.1, 0.13, 0.16) with k = 0.15 Clamp01((t -
+   6) / 2) - 0.15 Clamp01((t - 52.5) / 2) [verified].
+
+   The sun is one additive blob41b quad of size 21 in (0.4, 0.3, 0.3),
+   and two cloudt2 glows of size 60 in (0.03, 0.05, 0.08) at angles
+   -48 and -8, 30 apart in x and wobbling 11 sin(4 k + 0.8 t); all at
+   eye + (20, 30, -150) with depth writes off, every t [verified].
+
+   Then the lit sections, each under srand(0x409bfa) and drawn black
+   unless named:
+
+    +0x13c8  city      city1.obj before t = 32, city_less.obj after;
+                       citywater.obj in (0, 0.3, 0.7)
+    +0x318   city2     from t = 3, five tablet.obj copies at fixed
+                       places and turns, each in its own bracket
+    +0x13c8  city      from t = 32, citycrash.obj's shards
+
+   The city pairs get tick = 2 Clamp01(0.4 t) - 1, and from t = 3
+   2 Clamp01(0.1 (t + 0.5)) - 1, and ttime 100 [verified];
+   fragment_city2 has neither uniform.
+
+   citycrash's shards are seeked, with culling off, to
+   10.8 max(t - 32.5 - 1.1 v, 0), where v is the distance of the
+   shard's rest centre from (-121, 109.1, -404.32), divided by 100;
+   before t = 36 a shard more than 108 from it in x and z gets v =
+   100000 and stays whole; v gains 2.9 from t = 42 and 7 more from 45
+   [verified]. The collapse therefore spreads outwards from that point
+   at about 91 units a second from t = 32.5. Each shard is drawn as its four
+   triangles, part_truck's order (effects/truck.txt); for 45 <= t <
+   53.99 the first 100 and the last 200 are skipped, and from t = 45
+   one more than sqrt(231) from rest is drawn with GL_CULL_FACE on,
+   the rest with it off [verified]. The skip bound is the shard count
+   less 300, unsigned, so with fewer than 300 shards it would wrap and
+   the loop would run past the list; citycrash.obj has more, so the
+   release never does [verified]. The port stops at 0 instead
+   (section 5).
+
+   4.2.  The boat, the helicopter and the stars
+
+   From 0x004739c7 five sections follow, the first three lit:
+
+    0x004739c7  +0x13c4 boat   boat.obj before t = 15
+    0x00473d7e  +0x13cc heli   before t = 34, the helicopter as its
+                               three groups, a bracket each
+    0x00474e93  +0x13cc heli   22 <= t < 32, Hellidist.obj's shards
+    0x00475e28  no program     1100 stars
+    0x00476258  no program     before t = 3, 350 sparks at the boat
+
+   The boat gets ttime 100 and srand(0x409bfa). It is translated to
+   (0, 1340 - 110 t, 0), and from t = 9 to (104, 358.6 - 20 u,
+   23 u + 27) with u = t - 12.6; then turned -90 degrees about
+   (1, 0.23, 0) and -60 t about (0.1, 0, 1), that turn made twice
+   from t = 9; drawn in (0.7, 0.7, 0.6) [verified]. The translation
+   stays in DrawScene's frame (ESP+0x270) for the sparks.
+
+   The helicopter's ttime is 3 - 1.5 Clamp01(0.06 (t - 19)). Before
+   t = 15 it starts at (129, 268.6, -73) and is pulled toward the eye
+   by 0.89 Ease(Clamp01(0.2 (t - 6)), 1), its z pushed 2 S(t - 10)
+   and 4.4 S(t - 13) and its x 4.4 S(t - 13), S(v) =
+   SoftRamp(0.9 max(v, 0)); for 3 <= t < 5 it is turned -114 about y.
+   After that it rides the camera windows of 3.2 [verified]:
+
+    15 .. 22   (-10, 96.8 + 4 R, z) with z the window's target z and
+               R = SoftRamp(0.5 max(t - 18, 0)); pitched 23 R about
+               (1, -3.8, 0), 9 about x, rocked 1.2 sin(3.3 t) about z
+    22 .. 32   (-10, 96.8 + 0.8 (1 - Ease(Clamp01(t - 24), 1)), z)
+    32 .. 52   (-96, 150 - 20 u, 144 u - 658), u = t - 32
+
+   The last two are turned 12 about x and -4 about z, rocked
+   0.36 sin(1.3 t) about z, turned 90 about y and swayed 0.24 sin(2 t)
+   about (0.2, 0, 0.8); the first ends with 90 about y and 0.8 sin(4 t)
+   about (0.2, 0, 0.8). Every window then tilts 38 Ease(Clamp01(0.29
+   (t - 12)), 1) about (1, 0, -0.3) and -42 Ease(Clamp01(0.3 (t -
+   9.5)), 1) about x, and before t = 15 -288 Ease(...) about
+   (0.3, 1, 0) with the ease of the pull [verified].
+
+   Group 1, the main rotor, spins about y at 420 W degrees and the
+   tail rotor about z through (9.07, 2.82, -0.44) at 980 W, W =
+   -2 SoftRamp(max(0.8 (t - 5.5), 0)). From t = 22 (the stack byte
+   of 4) groups 0 and 2 are hellicrash2.obj's and the tail rotor is
+   group 2; group 1 stays helicopter.obj's [verified]. The window's
+   position is the stack Vec4 of 4, written by the windows only, so
+   before t = 15 it is (0, 0, 0); posx is 0.12 times its z, and after
+   the groups it is stored to this+0x13e0, which nothing in DrawScene
+   or Frame reads [verified].
+
+   For 22 <= t < 32 the helicopter breaks: Hellidist.obj's shards are
+   drawn at that position with the same turns, culling off, under
+   srand(0x409bfa). A shard whose rest centre has x = X is seeked to
+   min(0.2 max(t - 3 X + 6, 0), 9.7), and when a random r2 has
+   X < r2 - 3.4, also to 10.8 max(t - X - 32 - 3 r1, 0) more, r1 a
+   random drawn first; from t = 32 it would be 45 less, which the
+   window excludes. Each shard is its four triangles, each in its own
+   glBegin, part_truck's order [verified].
+
+   The stars are drawn under srand(0xa567) with no program, point
+   size 2 and depth testing on, under a 65 / 1 / 1000 projection:
+   grey 0.2 (r + 0.2), at 720 along the normalised (2r - 1,
+   |2r - 1|, 2r - 1) from the eye, the upper half sphere. An
+   Ease(Clamp01(0.3 t), 1) is computed and its result replaced by 1.
+   The section's modelview push is popped in GL_PROJECTION mode, so
+   DrawScene leaves the modelview stack one deeper [verified].
+
+   Before t = 3 350 additive points of size 1: a random point in the
+   cube scaled 0.84, raised 18 f + 2 with f the fraction of
+   (0.8 r + 1) (t + 10000) / 2 + 100, scaled 1.7, lowered 10 and moved
+   to the boat's translation; coloured (0.1, 0.14, 0.16) times
+   Clamp01(0.9 sin(pi f)) [verified].
+
+5.  Reconstruction notes
+
+   src/rupture/demo/part_city.cpp holds the constructor, Frame and
+   Init; part_city_draw.cpp holds DrawScene and the sections of 4.1,
+   part_city_draw2.cpp those of 4.2, with City_Draw
+   (part_city_draw.h) carrying the stack values that cross between
+   them. The four Obj meshes at this+0x3c8..0x47c that Init never
+   loads, and the std::vector at this+0x638, are left out of the
+   port's class. So are this+0x1370, this+0x1374 (0x70), this+0x1380
+   (0x6f), this+0x13f0 (200), this+0x13c0 and this+0x314: Init sets
+   them and nothing reads them - no instruction in part_city's methods
+   uses those offsets but Init's stores and the constructor's, and the
+   one other function touching +0x13f0 and +0x314 heavily is part_end's
+   DrawScene (0x0047a770), on part_end's own fields [verified, the
+   instruction search]. Every part's Init sets a block of slot numbers
+   in the same pattern, and part_truck and part_rail keep unused ones
+   too, so these look like what copy-and-edit left behind rather than
+   developer tooling [inferred].
+
+   One deliberate divergence: citycrash's draw loop stops at 0 where
+   the demo's unsigned bound would wrap (section 4.1). It draws the
+   same shards with the release's data.
+
+   With the port at 800x450 and both on the agent's fixed step, the
+   eye camera at t = 6, 18, 30, 42 and 54 matches the original's at
+   g_renderCtx+0x1848 in every float but up.x, which differs by up to
+   2e-7: the shake's sin, x87 in the demo [observed].
+
+   At t = 2, 5, 10, 18, 26, 30, 36, 42, 48, 54 and 58 the port's frame,
+   cropped to the original's 794x421, differs from the original's in
+   at most about 200 pixels by more than 16 of 255, all of them star
+   points of 4.2 drawn at the same places with their light spread
+   differently over the 2x2 pixels; this+0x13e0 reads (1, 0, 0, 0) in
+   both at t = 58 and (1, -10, 96.8, -413) in the port at t = 26
+   [observed].
+
+   With only the sections of 4.1 drawn, the port's frames at t = 3,
+   33, 40 and 47 differ from the original's by a mean of under 0.5 in
+   each 8-bit channel, and at t = 6, 12, 18, 24 and 30 only where the
+   helicopter, its shards and the stars of 4.2 are missing; the sky,
+   the city, the tablets and citycrash's collapse match [observed].
+
+6.  Open questions
+
+   o The size-2 star points of 4.2 are brighter at their centres in
+     the port, up to about twice [observed, t = 18]. Target 0 is
+     4-sample multisampled, and legacy GL draws a multisampled point as
+     a circle of its size tested per sample, where a GL 3.3 core
+     gl_PointSize point is a square, so the original covers fewer
+     samples [inferred]. Matching it needs per-sample coverage in the
+     fragment stage (gl_SampleMask, GL 4.0 / GLSL ES 3.2), which
+     neither GL 3.3 core nor WebGL2 has; scaling the brightness instead
+     would be an invented factor. Left as it is.

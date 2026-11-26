@@ -1,0 +1,284 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                         THE PORT'S HOT SPOTS
+
+
+Abstract
+
+   The original draws in immediate mode, one glBegin/glEnd per shard or
+   spark, which costs a 2009 driver little. The port carries those calls
+   on GL 3.3 core through gl1 (core/gl1), where each End is a shader
+   apply, a buffer upload and a draw call, so a loop of thousands of
+   small Begin/End pairs is the port's main cost. Seven such loops are
+   bracketed with gl1::BatchBegin and gl1::BatchEnd, which gather their
+   vertices into one buffer and draw it when the state changes. The
+   rails part_truck, part_rail and part_boat draw along their fixed
+   tracks are generated once and replayed from a display list. The
+   streamed vertices go through one buffer written by mapping, and
+   Release is built with whole-program optimisation. The transcribed
+   bodies are unchanged and the frames come out pixel-identical. This
+   document is about the port only. Nothing in it is a fact about
+   ASD-Rapture.exe.
+
+Table of Contents
+
+   1. The cost
+   2. The batch
+   3. The bracketed loops
+   4. Measurements
+   5. The rails cache
+   6. The stream buffer and the Release build
+   7. Finding a hot spot
+   8. What is left
+   9. Open questions
+
+1.  The cost
+
+   Before batching, the shard scenes made one draw per shard [observed,
+   a hook on gl1::End in the Debug build at 800x450]:
+
+   +-------------------------+--------------------+-------------------+
+   | Scene                   | Draws per frame    | Release fps       |
+   +=========================+====================+===================+
+   | part_city, t >= 33      | about 12,600       | 36 to 47          |
+   | part_end, throughout    | 13,000 to 13,700   | 30 to 33          |
+   | part_city, t 22 to 32   | about 3,540        | 60                |
+   | part_truck, t >= 59     | about 1,600        | 60                |
+   | part_motor and truck,   | about 620          | 60                |
+   | the sparks              |                    |                   |
+   +-------------------------+--------------------+-------------------+
+
+   In Debug a draw costs about 2.4 microseconds of CPU time: batching
+   city's t = 36 frame removed 12,575 draws and 30.5 ms [observed].
+
+2.  The batch
+
+   Between BatchBegin and BatchEnd an End does not draw. It appends its
+   vertices, already in triangles, to one buffer, and BatchFlush draws
+   the buffer in one glDrawArrays. Every gl1 and shader-layer call that
+   would change how the held vertices draw flushes first, so each flush
+   draws with the state all of its vertices were issued under, in the
+   order they were issued:
+
+   o  Shader_Bind, the profile enables and disables, Shader_SetParam*,
+      Shader_SetTexture, and every Shader_Set*Matrix;
+   o  every glBindTexture in core/post and core/video;
+   o  a change to the projection matrix;
+   o  gl1::Enable and gl1::Disable, but only when the cap actually
+      changes state, and never for GL_CULL_FACE (below);
+   o  gl1::PointSize, gl1::CallList, and a different primitive kind.
+
+   A raw gl* state call inside a bracket is not seen. city_crash's
+   per-shard face-culling switch therefore goes through gl1::Enable and
+   gl1::Disable. A switch of GL_CULL_FACE does not flush: it starts a
+   new run at the batch's current vertex. The flush uploads the whole
+   batch once, applies the shader state once, and then sets each run's
+   culling and draws its range, in order. These are the same draws
+   under the same state as one flush per switch, without an upload and
+   a shader apply for each; the last run's culling is the state the
+   draws leave.
+
+   The fixed-function stand-in (ff.vert) reads the modelview at draw
+   time, as projection times modelview. So while it is the vertex stage,
+   End applies the current modelview to the positions as they join the
+   batch, and the flush draws with the projection alone (the
+   ModelViewProjection override). The modelview is always affine here,
+   so positions stay three floats. The Cg pairs take their matrices as
+   explicitly set values, so their batches need no transform. The
+   colour, the normal and the texture coordinate travel per vertex.
+
+   A batch holds positions in eye space or in object space, never both:
+   if a different vertex stage comes in, the batch flushes first.
+
+   --nobatch on the command line (agentctl.py launch --nobatch) makes
+   BatchBegin do nothing, which brings back one draw per End, and turns
+   the rails cache (section 5) off, for A/B comparison.
+
+3.  The bracketed loops
+
+   +--------------------------+------------------------+--------------+
+   | Function                 | File                   | Draws, then  |
+   +==========================+========================+==============+
+   | city_crash               | part_city_draw.cpp     | per shard    |
+   | city_heli_shards         | part_city_draw2.cpp    | per shard    |
+   | end_heli_shards          | part_end_draw.cpp      | per shard    |
+   | end_logo                 | part_end_draw2.cpp     | per shard    |
+   | truck_destruction        | part_truck_draw.cpp    | per shard    |
+   | truck_sparks             | part_truck_draw.cpp    | per spark    |
+   | sparks                   | part_motor.cpp         | per spark    |
+   +--------------------------+------------------------+--------------+
+
+   Each draw loop opens with BatchBegin and closes with BatchEnd. The
+   sparks go through Gfx_DrawQuad, whose per-spark LoadMatrixf,
+   Rotatef and Scalef change only the modelview, which the batch
+   applies as each quad joins.
+
+4.  Measurements
+
+   The Debug build at 800x450, with and without --nobatch, dumping the
+   same frame at each point [observed]:
+
+   +-----------+----+-----------+-----------+-------------+-----------+
+   | Part      | t  | ms before | ms after  | draws after | pixels    |
+   |           |    |           |           |             | differing |
+   +===========+====+===========+===========+=============+===========+
+   | part_video| 10 | 13.7      | 13.7      | -           | 0         |
+   | part_motor| 0  | 9.2       | 7.7       | 44          | 0         |
+   | part_truck| 0  | 11.4      | 9.4       | 568         | 0         |
+   | part_truck| 60 | 21.1      | 17.5      | 468         | 0         |
+   | part_city | 26 | 16.1      | 8.2       | 25          | 0         |
+   | part_city | 36 | 44.4      | 13.9      | 22          | 0         |
+   | part_city | 50 | 49.9      | 27.7      | 4,105       | 0         |
+   | part_end  | 12 | 55.3      | 21.0      | 23          | 0         |
+   | part_end  | 30 | 52.7      | 18.4      | 23          | 0         |
+   +-----------+----+-----------+-----------+-------------+-----------+
+
+   Draws after are calls to Shader_Apply in one frame, display-list draws
+   included.
+
+   The Debug times above are the agent's, at 800x450. Release at
+   1280x720 is what a viewer sees, and section 6 gives it. part_truck
+   holds 60 fps throughout, and so does part_rail since the rails
+   cache (section 5) [observed].
+
+5.  The rails cache
+
+   maybe_Track_DrawRails (part_truck, and part_boat's copy
+   maybe_Track_DrawRails2) and part_rail's maybe_Track_DrawRailsAlt
+   draw two rails and their sleepers along a track: four quad strips
+   and a box on every fourth point, each point's frame worked out
+   afresh by Scene_RoadFrame. part_rail's track has 2,950 points and
+   each of its five rails[] 650, so one call makes about 90,000 or
+   20,000 vertices, and part_rail makes up to about ten calls a frame.
+   The CPU work and the upload of those vertices, not the number of
+   draws, was part_rail's cost.
+
+   The output of a call depends on its track's points and its depth
+   alone, and every part fills its tracks in Init. So the calls go
+   through Scene_DrawRailsCached (demo/scene.cpp), which compiles the
+   first draw of a (draw function, track, depth) into a gl1 display
+   list and calls the list after that. Sixteen are kept, the least
+   recently used replaced. The state a draw sets on its way, cull face
+   off and the track's loop flag cleared, is set again on every call.
+   A list draws in the current colour, which is the colour the strips
+   would have had, since the draws never set one. The track's points
+   are hashed on every call, so a changed track would be compiled again
+   rather than drawn stale. While a depth eases, every frame is a new
+   key and the call costs what it did before.
+
+   With and without --nobatch, the Debug build at 800x450 [observed]:
+
+   +-----------+----+-----------+-----------+-------------------+
+   | Part      | t  | ms before | ms after  | pixels differing  |
+   +===========+====+===========+===========+===================+
+   | part_truck| 30 | 6.9       | 7.0       | 0                 |
+   | part_truck| 60 | 21.1      | 11.7      | 0                 |
+   | part_rail | 5  | 22.8      | 4.8       | 0                 |
+   | part_rail | 20 | 5.0       | 5.5       | 0                 |
+   | part_rail | 31 | 26.4      | 4.9       | 0                 |
+   | part_rail | 40 | 26.2      | 5.4       | 0                 |
+   | part_rail | 50 | 26.6      | 4.9       | 0                 |
+   | part_rail | 60 | 19.5      | 5.1       | 0                 |
+   | part_boat | 20 | 11.4      | 11.2      | 0                 |
+   +-----------+----+-----------+-----------+-------------------+
+
+6.  The stream buffer and the Release build
+
+   In Release part_city from t = 32 and part_end throughout are bound
+   by the CPU: the GPU waits on them. part_end's frame streams about
+   9.9 MB of vertices, almost all of it end_logo's shards, and
+   part_city's about 7.3 MB. Uploading that with a glBufferData per
+   draw cost about 4.4 ms of part_end's frame, the driver copying at
+   about 2.3 GB/s, and the reallocation held the GPU up as well.
+
+   So gl1 keeps one 16 MB stream buffer and fills it front to back
+   (stream_upload in core/gl1.cpp). Each upload maps the range past
+   everything already drawn, unsynchronized, and copies into it; when
+   the buffer is full it is renewed with a glBufferData of no data and
+   filling starts again at its front. Nothing the GPU may still read
+   is written, so no wait is needed. In the browser, where WebGL2 has
+   no map, the same range is written with glBufferSubData.
+
+   Release is built with whole-program optimisation (/GL, /LTCG), so
+   the Vec4 maths, Track_Eval and the gl1 calls inline into the loops
+   across files. With /fp:precise that does not change a result. It
+   also keeps a link map and a fixed base, for portprof's Release mode
+   (section 7).
+
+   part_end's frame in Release at 1280x720, from tools/perflog.py, the
+   mean over t = 0 to 10 [observed]:
+
+   +---------------------------+---------+-----------+------------+
+   | Stage                     | before  | ring map  | + LTCG     |
+   +===========================+=========+===========+============+
+   | the frame (App_Frame)     | 17.5    | 11.7      | 10.0       |
+   | end_logo, seeking shards  | 5.3     | 4.5       | 4.4        |
+   | end_logo, building verts  | 3.4     | 3.4       | 2.1        |
+   | uploads, all draws        | 5.6     | 1.3       | 1.0        |
+   +---------------------------+---------+-----------+------------+
+
+   Times in ms. With the cull runs (section 2) part_city's t = 48 to
+   50, about 3,500 draws, went from 14.6 to 8.5 ms. Over the two whole
+   parts, frames later than 1.5 refreshes fell from 10 to 42 per 2
+   seconds at the worst stretches to none, but for the first frame of
+   each part and two single frames of part_end, at t = 26 and 32
+   [observed].
+
+7.  Finding a hot spot
+
+   rupture.exe --perflog=FILE writes a line per frame: the time since
+   the last frame, the time in App_Frame, in SwapBuffers and on the
+   GPU, the last from a timer query. tools/perflog.py runs Release with
+   it and summarises per 2 seconds. With vsync the swap is the wait
+   for the display, so a short App_Frame and a long swap is headroom.
+   The GPU figure includes the GPU's idle gaps: it is the GPU's own
+   cost only when the CPU is ahead of it.
+
+   tools/portprof.py samples the Debug build under the agent: it seeks
+   to a part time, runs frames, and while they run reads the main
+   thread's call stack about a thousand times a second, naming each
+   frame from the link map. Its inclusive column is where the frame's
+   time goes, call tree and all; its self column is the function the
+   thread was in, with time inside a DLL (the GL driver) charged to
+   the port function that called it. Debug is optimised but never
+   inlines, and every function in it pays the agent's entry and exit
+   hooks, so small functions such as the Vec4 maths weigh more there
+   than in Release. GPU time shows only where the CPU waits for the
+   driver.
+
+   With --release SECONDS it samples a Release rupture.exe already
+   running, in real time. Release inlines and keeps no frame pointers,
+   so it gives self time only, with each function's commonest caller;
+   time in a DLL is charged to the first return address above ESP that
+   follows an indirect call, the only kind that enters a DLL.
+
+8.  What is left
+
+   o  part_truck's hex2_grid and hex3_ring draw a display-listed mesh
+      once per piece, about 550 per frame while they are on. Each piece
+      has its own Cg matrices and its own "doit" value. Folding these
+      into one draw would need instancing, not this batch.
+   o  part_end's largest cost is seeking end_logo's shards, about
+      4.4 ms a frame in Release: two Track_Eval calls per shard, each on
+      the shard's own point vector, then Shard_Rotate. It is the
+      transcribed arithmetic; laying the tracks out side by side would
+      be the next step if it mattered.
+
+9.  Open questions
+
+   o  Pre-transforming in float on the CPU rounds differently from
+      the GPU multiplying by a combined matrix. No measured frame shows
+      a difference, but frames other than these nine have not been
+      compared.
+   o  gl1's projection stack is full - its top at 31 of 32 - by part_truck
+      t = 30, in a run from the start and in a jumped one [observed], so
+      some draw pushes GL_PROJECTION without a pop. A push on a full
+      stack is ignored and the next pop exposes an older matrix. GL
+      guarantees only two projection entries and drivers give few more,
+      so which matrix a pop exposes may differ from the original's. The
+      unbalanced push is not located.
+   o  part_end has a single frame near t = 26 and one near t = 32 that
+      take about 25 ms on the GPU, one late frame each in Release
+      [observed]. What the GPU does in them is not located; a shader or
+      texture first used there is a candidate [guess].

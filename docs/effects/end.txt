@@ -1,0 +1,340 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                          PART_END: THE LAST PART
+
+
+Abstract
+
+   part_end is slot 6 of the relay and the last part. It starts where
+   part_city hands over at t = 59 and runs on its own clock from 0.
+   Its Init loads most of part_city's meshes again, breaks
+   outputobj.obj and Hellidist.obj into shards, and loads two credit
+   images, R0.jpg and R1.jpg; its Frame keys one camera window on t
+   over part_boat's post chain, shows the two credits between t = 3
+   and 13, and fades the scene out over t = 24..29. Its own end test
+   at t = 54 sets done[6] and started[6] and passes nothing on; the
+   demo exits on its global clock before that (3.3).
+
+Table of Contents
+
+   1. What it draws
+   2. Init
+      2.1. The shards
+   3. Frame
+      3.1. The clock
+      3.2. The cameras
+      3.3. The end
+      3.4. The post chain and the credits
+   4. DrawScene
+      4.1. The wreck, to 0x0047c503
+      4.2. The logo and the stars, from 0x0047c503
+   5. Reconstruction notes
+   6. Open questions
+
+1.  What it draws
+
+   Init loads boat.obj (into g_boatObj, as part_truck and part_rail
+   do), helicopter.obj, hellicrash2.obj, helix.obj, Hellidist.obj,
+   city1.obj, city_less.obj, citywater.obj and outputobj.obj, and the
+   textures pattern5, bg08, R0, R1, blob41b and cloudt2 [verified,
+   part_end::Init]. Which of the meshes DrawScene draws, and how, is
+   section 4. Frame draws R0.jpg and R1.jpg itself (3.4).
+
+2.  Init
+
+   part_end::Init (0x0047dd60) is part_city::Init's shape
+   (effects/city.txt 2) in the slot band 5000: texBase (this+0x3d8)
+   and model (this+0x13b4) are 5000. The render targets are made only
+   with seq->relayMode 0; pattern5, bg08, R0, R1, blob41b (through
+   Tex_LoadWithAlpha) and cloudt2 go to texture slots texBase + 10,
+   0x5a, 0x1f, 0x20, 0x14 and 0x1e [verified]. box.3ds is loaded
+   through maybe_Shader_LoadPairWithModel with the first pair, as in
+   the other parts. The pairs [verified]:
+
+    +0x13dc  0x138a  vertex_projection_anisotropic
+                     fragment_projection_anisotropic2h
+    +0x13e4  0x13b8  vertex_boat   fragment_boat
+    +0x13e8  0x13b2  vertex_boat2  fragment_city
+    +0x13ec  0x13ae  vertex_boat   fragment_heli2
+    +0x13f0  0x13e0  vertex_boat   fragment_heli2r
+    +0x13f4  0x13aa  vertex_boat   fragment_train
+
+   and the post passes blur256 (+0x32c, 0x139f), blur256FOV (+0x334,
+   0x13a5), Blur_circular (+0x328, 0x139d), bend3 (+0x330, 0x13a7)
+   and wireframe (+0x338, 0x13a3) [verified]. +0x13e0 (0x13a8) and
+   +0x33c (0x13a1) are set and not loaded. try1.sav goes into the Path
+   at this+0x20, and the Track at this+0x198 is cleared and given 1000
+   points (0, 0, k), k = 1..1000, part_boat's track made longer
+   [verified]. Both clocks start at 0 [verified].
+
+   2.1.  The shards
+
+   There is no srand: the shards draw on from wherever part_city::Init
+   left the C runtime's generator, so their throws depend on every
+   rand() the Inits before it made [verified, the absence of the
+   call; Demo_Init calls the Inits in slot order]. That includes the
+   render targets part_end::Init does not make: its gate sees relay
+   mode 1 through the Inits, so it skips Tex_CreateTarget and the
+   3329600 rand() draws of its noise (subsystems/parts.txt 2). With
+   the port's Demo_Init doing the same, outputobj's shards get the
+   original's axes, shard 0 to shard 13018 [observed].
+
+   outputobj.obj is broken into shards with spin 0.52 (0x004f53f0)
+   and Hellidist.obj with spin 5.0 (Obj_MakeShards,
+   effects/video.txt 3.4). Each shard gets its own throw, with r a
+   fresh Math_Random each time, D = r^3 * 6 and P = (1.2 r)^17 + 2
+   [verified]:
+
+    outputobj   v = (8r - 4, 9r - 2, 4P) * 0.5 * 1           a = (0, -66, 0)
+    Hellidist   v = (4r - 2 - D, 9r - 2, 8r - 4) * 0.2       a = (10, -6, 0)
+
+   In outputobj's the 9r - 2 is drawn before the 8r - 4. Before that
+   each loop builds and overwrites the same two vectors part_city's
+   loops do; their randoms still move the stream [verified].
+
+   Hellidist.obj is baked with Obj_BakeShards(6, 20). outputobj.obj is
+   flown by Init itself: per shard 120 records (11 at the first, as
+   Obj_BakeShards does), each followed by two steps of the same form
+   as Shard_Step with the constants [verified]:
+
+    dt        0.025 (0x004f53e8)       gravity (0, -2, 0) into a
+    damping   0.98875 (0x004f53e0)     on v and a, every step
+    y >= -3.95 (0x004f53d8)            angle += (|v| + 1) spin 4.3 dt
+    else                               v and a times 0.96875
+    y < -4 (0x004f46c8)                y = -4, v.y times -0.29, v.x
+                                       and v.z times 0.92, then one
+                                       more dt of v added
+
+   The damping factors are Shard_Step's 1 - 0.45 dt and 1 - 1.25 dt
+   at dt = 0.025, folded [inferred]. So the pieces fall on a floor at
+   y = -4 and bounce, where Shard_Step's floor is at -12000.
+
+3.  Frame
+
+   3.1.  The clock
+
+   part_end::Frame (0x0047f4e0) gates on started[6]/done[6].
+   maybe_Seq_Copy copies the sequence record into this+0x5c8, so the
+   head is h0, h1, h2 at this+0x5c8..0x5d8 and this+0xe80 is the
+   previous frame's partClock (effects/boat.txt 3.1). t (this+0x348)
+   is tLocal (this+0x350) + g_partTimeCarry, h0 * 5 when seq+0x28 is
+   set, and held at +0.0 at least [verified].
+
+   nearZ is 1.4 and farZ 600 [verified]. seq->partClock is t + 365,
+   the sum 39 + 64 + 70 + 65 + 61 + 7 + 59 of the earlier parts'
+   lengths in part_city's order [verified]. nearZ then has 0 added:
+   the floor test leaves a 0 on the x87 stack and the code adds it
+   [verified, the disassembly].
+
+   3.2.  The cameras
+
+   One base camera from the seq head, as part_city's (effects/city.txt
+   3.2), then one window, 0 <= t < 130 [verified]:
+
+    eye     (35 sin a - 1.4 Ease(Clamp01(0.2 (t - 18)), 1),
+             2,
+             35 cos a - 2.1 t),       a = 0.6 - 0.03 t
+    target  (0, 0.36 t, -1.5 t)
+    up      (-0.8 F, 1, 0.02),        F = 1 - Ease(Clamp01(0.35 t), 1)
+
+   with the eye x and z and the target y and z rounded to float. Eye
+   and target both travel in -z, the eye at 2.1 and the target at 1.5
+   a second, while a turns the eye slowly about them at radius 35;
+   the up vector's lean of -0.8 in x is gone by t = 2.9 [verified].
+
+   The shake is part_city's on try1.sav (effects/city.txt 3.3): the
+   index trunc(35 t) mod n, the depth
+
+    0.0064 Clamp01(0.3 (t - 3)) (1 - Clamp01(0.5 (t - 13)))
+
+   so it rises over t = 3..6.3 and is gone by t = 15; RightV and UpV
+   carry the depth times 1.6, the up tilt sin(1.71887 a depth) 0.05
+   with no further factor [verified]. The light camera is the eye
+   camera with its eye moved by (30, 0, 0) * -14 [verified].
+
+   3.3.  The end
+
+   At t >= 54 (0x004f4d50) Frame pops its attributes, sets done[6] and
+   started[6] and returns [verified]. It writes no g_partTimeCarry
+   and starts no part, and from then on its gate returns at once, so
+   nothing would be drawn. The visible end comes first: the scene's
+   main layer fades out over t = 24..29 (3.4), and Demo_Frame exits
+   the demo once g_demoClock passes 401 (subsystems/clock.txt 3),
+   which is before t = 54 [inferred, partClock: 401 - 365 = 36]. On
+   the agent's fixed step the port's demo clock reads 364.99 at
+   part_end's t = 0, so 401 falls at t = 36.0 [observed].
+
+   3.4.  The post chain and the credits
+
+   part_boat's chain: blur256 to the half target, wireframe, blur256
+   six times, bend3 and the composite [verified]. bend3's alpha is
+
+    (1 - 0.7 Clamp01(0.3 (t - 15))) 0.195 + 0.7 F
+
+   with F of 3.2 [verified]. The composite's quarter layer is grey
+   0.15, and the main layer is (1 - F)(1 - Clamp01(0.2 (t - 24))):
+   it fades in over t = 0..2.9 and out over t = 24..29 [verified].
+
+   Then, for 3 < t < 13, two more additive quads with the composite's
+   identity matrices, R0.jpg (texBase + 0x1f) and R1.jpg (texBase +
+   0x20), i = 0 and 1 [verified]:
+
+    grey   Clamp01(1.4 sin(pi Clamp01((t - 3 - 4.032 i) 3 / 14)))
+    place  x + 0.402, and x - 0.2 more when W / H < 14 / 9
+    size   H / W by 0.5, drawn only while the grey is over 0.0001
+
+   4.032 is 0.9 * 4 * 1.6 * 0.7 and 3 / 14 the double
+   0.21428571428571427 [verified]. So R0 shows for t = 3..7.7 and R1
+   for t = 7.0..11.7, each at full grey from 1.2 s after its start
+   until 1.2 s before its end.
+
+4.  DrawScene
+
+   part_end::DrawScene (0x0047a770..0x0047dd51) is called by Frame
+   alone, with pass 1, and does not read it [verified]. Its lit
+   sections are part_city's bracket: no push round
+   maybe_Scene_DrawLit, bg08 (texBase + 0x5a) as both textures, and
+   ctx+0x1918, +0x1920 and +0x1930 written as part_boat's are
+   (boat.txt 4) [verified]. No value crosses from 4.1 to 4.2 through
+   the stack frame [verified].
+
+   4.1.  The wreck, to 0x0047c503
+
+   The opening is part_city's with the clear black and only two
+   field-of-view terms: 55 degrees, an eased term at t = 19 multiplied
+   by -0.0, and 30 off over t = 48.5..50.2; planecut 11.2 on the
+   aniso2h pair. Then the blob41b sun of size 18 and the two cloudt2
+   glows of size 60 at eye + (20, 30, -150), the glows wobbling by
+   11 sin(4 k + 0.32 t) [verified].
+
+   The road: the heli2 pair with ttime 2.04 and strong 0, colour
+   (0.7, 0.7, 0.6), the texture matrix translated by (0, -2, -892)
+   with no reset before it, and maybe_Track_DrawRoadWide (0x00478f10)
+   on this+0x198, the 1000-point straight track. That function is
+   maybe_Track_DrawRoadDepth (0x004a1710) with the top three times as
+   wide (R * -4 * 3 to R * 4 * 3) and the sides dropped by
+   (U * 1.5) * 0.3; its depth argument (1.0) is not read. A dash's far
+   corners swap y, as maybe_Track_DrawRails's sleepers do [verified].
+
+   The wreck is three groups, each with its own lit bracket on the
+   heli2r pair, under srand(0x409bfa) and five fixed turns on the
+   texture matrix: 2.6 about z, 48 about y, 90 and 12 about x, -4
+   about z, then a turn of 0 * 90 about (0.3, 1, 0) [verified]. Both
+   heli pairs get strong 1 and ttime
+
+      2.04 - max(sin 3t, -1) * 0.25 * max(sin 12.7t, -1) * 0.1 * 0.5
+
+   a flicker of at most 0.0125 [verified]. Group 0 is
+   hellicrash2.obj's group 0; group 1 is helix.obj's group 0, turned
+   about y by 188.6 - 1.6 max0(sin 7t) max0(sin 23t) plus 30 eased in
+   over t = 12.5..15.8; group 2 is hellicrash2.obj's group 2, spun
+   270 degrees a second about z round (9.07, 2.82, -0.44) [verified].
+   Two Math_SoftRamp and two Math_Ease results are computed and
+   dropped [verified].
+
+   this+0x1408 is set to {1, 0, 0, 0}. Then before t = 32 Hellidist's
+   shards (this+0x290) on the heli2 pair, under the same five turns
+   and culling off. Each is seeked to
+
+      s = min(9.7, 0.2 max0(t + 6 - 3 rest.x))
+
+   plus 10.8 max0(t + 368 - rest.x - 3 r1) when rest.x is below r2 -
+   3.4, r1 and r2 two Math_Random draws made for every shard
+   [verified]. Since rest.x has to be below -2.4 for that, the second
+   term takes only the shards on one side, and sends them thousands
+   of units along their flight at once [inferred]. A shard is drawn,
+   as part_city's citycrash shards are, only while |pos - turned[0]|
+   is at most 10 [verified]. The Vec4_Sub of rest and
+   (-14, 3.1, -1.32) the seek loop makes is not used [verified].
+
+   With both at 800x450 on the agent's fixed step, the road, the sun,
+   the glows, the wreck's groups and Hellidist's drawn shards match
+   the original's at t = 2, 4, 6, 9, 12, 15 and 18; from t = 21 the
+   frames differ by a mean of 0.07 grey levels or less [observed].
+   After the last frame before t = 32, all 3523 shards' s match the
+   original's exactly [observed].
+
+   4.2.  The logo and the stars, from 0x0047c503
+
+   Two sections follow, the first lit, neither gated on t:
+
+    0x0047c503  +0x13ec heli2  outputobj.obj's shards, the ASD logo
+    0x0047d8e6  no program     1100 stars
+
+   The logo's bracket sets no ttime, so the heli2 pair keeps the one
+   4.1 set last; its strong is set to 0.2 and then to
+
+      0.4 - 0.4 Clamp01((t - 7) / 4)
+
+   so the shader's orange term fades out over t = 7..11 [verified].
+   Under srand(0x409bfa) the texture matrix is translated by
+   (0, 2, -19.5), the colour is (0.7, 0.7, 0.6) and culling is off.
+   Each shard of this+0x308 is seeked to
+
+      s = min(60 - 6 t + 3 (0.8 |rest - P0| + rest.y) + 21 r, 60)
+          - 0.5 (t + 44)
+
+   with P0 = (-14, 3.1, -1.32), r a Math_Random and a second draw
+   made and dropped; the 0 h2 term of the head is added as 4.1's are
+   [verified]. |rest - P0| is summed as float squares, x, y, then z.
+   s is never above 38 - 0.5 t, inside the 120 records Init flew
+   (2.1). Once 6 t passes a shard's X = 3 (0.8 |rest - P0| + rest.y)
+   + 21 r, its s falls by 6.5 a second, so it runs back up its
+   recorded fall and reaches its first record, its place in the
+   logo, at t = (38 + X) / 6.5: the shards low and near P0 first
+   [inferred, from the form].
+
+   Each shard is one glBegin of its four triangles in part_truck's
+   order, its corners turned[k] times (float)(h2 * 0 + 1), plus pos,
+   plus (0, 0, 0), times 1. It is coloured
+
+      C = (1, 0.3, 0) + ((0.7, 0.7, 0.6) - (1, 0.3, 0)) g
+      g = 1 - Clamp01(0.06 |pos - (turned[0..3] summed / 4)|)
+
+   orange more than 16.7 from the object origin, grey at it [verified;
+   the turned corners are about pos, so their mean is near 0,
+   inferred].
+
+   The stars are part_city's (effects/city.txt 4.2) with two
+   differences: each point draws two more Math_Random values first,
+   dropped, and its y is 2r - 1 with no fabs, so they fill the whole
+   sphere about the eye [verified]. The modelview push popped in
+   GL_PROJECTION mode is the same.
+
+5.  Reconstruction notes
+
+   src/rupture/demo/part_end.cpp holds the constructor, Frame and
+   Init; part_end_draw.cpp holds DrawScene and the sections of 4.1,
+   part_end_draw2.cpp those of 4.2. The Obj meshes at
+   this+0x3e8..0x49c and +0x550 that Init never loads, and the
+   std::vector at this+0x658, are left out of the port's class.
+   outputobj.obj's flight is written inline in Init, as the demo has
+   it, rather than through a second Shard_Step.
+
+   With both halves drawn, the port's frames at t = 3, 6, 9, 12, 15,
+   18, 21 and 27, cropped to the original's 794x421, differ from the
+   original's by a mean of 0.08 or less in each 8-bit channel,
+   the logo's flight included [observed].
+
+   The test for 401 (k_dbl_401, 0x0044854c) comes after the parts have
+   drawn, and the exit skips that frame's SwapBuffers [verified]. The
+   port's Demo_Frame returns false there: the Windows host closes, so a
+   run from part_end ends at t = 36.0 [observed]; the browser host
+   stops its frames and input and the page offers a reload; the agent
+   draws on, to t = 54, where part_end sets its flags and it reports no
+   part running [observed].
+
+   With the port at 800x450 and both on the agent's fixed step, the
+   eye camera at t = 0.5, 20, 30 and 35.5 matches the original's at
+   g_renderCtx+0x1848 in every float, and at t = 5 and 12 in every
+   float but up.x, which differs by 2.4e-7 and 1.0e-6: the shake's
+   sin term, the only one live there (3.2) [observed].
+
+6.  Open questions
+
+   o The shake's up.x differs from the original's by up to 1e-6 at
+     t = 12, a relative 8e-5 of the sin term, where part_city's
+     differs by 2e-7 [observed]. The target, built from the same
+     index and depth, matches exactly, so the difference lies in
+     path.a or in the x87 sin [inferred]; left as it is.

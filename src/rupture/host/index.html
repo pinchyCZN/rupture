@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RUPTURE - ASD 2009 (reconstruction)</title>
+<!--
+  OURS. The browser page of rupture: the other half of host_web.cpp.
+  tools/build_web.sh copies it to build/web/index.html beside
+  rupture.js, rupture.wasm, rupture.data and theloader.jpg.
+
+  o The render size is fixed when the demo starts, so the size menu
+    reloads the page with ?size=WxH or ?size=screen; host_web.cpp's
+    main reads Module.rupWidth and Module.rupHeight.
+  o The loading screen covers the picture from the first moment, as
+    part_start::Frame draws it: square, 103.6% of the height, centred
+    on black (subsystems/startup.txt 4). When the parts are loaded
+    (Module.demoReady) it asks for a click, which starts the clock and
+    lets the browser start the music (web_start).
+  o The Muted box and the volume slider call web_set_muted and
+    web_set_volume; every 500 ms they are set from web_muted and
+    web_volume, so M, + and - in the demo show here.
+  o Fullscreen is the browser's: the button, a double-click on the
+    picture or Enter; Esc leaves it.
+  o When the demo ends (Module.demoEnded) the host has stopped its
+    frames and its input; the page closes the audio and the WebGL
+    context, so nothing is left running, and the loading screen
+    offers a reload to watch again.
+-->
+<style>
+  html, body { margin: 0; padding: 0; background: #111; color: #999;
+               font: 13px/1.6 "Courier New", monospace; }
+  #wrap { display: flex; flex-direction: column; align-items: center;
+          gap: 10px; padding: 18px 12px 12px; }
+  canvas { background: #000; display: block; width: 100%; height: auto;
+           outline: none; }
+  #controls { display: flex; gap: 18px; align-items: center;
+              flex-wrap: wrap; justify-content: center; }
+  #controls select, #controls button {
+    font: inherit; background: #222; color: #ccc; border: 1px solid #444;
+    padding: 2px 8px; }
+  #controls button { cursor: pointer; }
+  #controls input[type=range] { width: 110px; vertical-align: middle; }
+  #status { min-height: 1.5em; }
+  #keys { border-collapse: collapse; }
+  #keys td { padding: 0 10px; vertical-align: top; }
+  #keys td:first-child { color: #ccc; text-align: right; white-space: nowrap; }
+  #stage { position: relative; max-width: 100%; }
+  #loader { position: absolute; left: 0; top: 0; right: 0; bottom: 0;
+            background: #000; overflow: hidden; display: flex;
+            align-items: center; justify-content: center; }
+  #loader img { height: 103.6%; width: auto; flex: none; }
+  #loader.ready { cursor: pointer; }
+  #start { position: absolute; left: 0; right: 0; bottom: 12%;
+           text-align: center; color: #fff; font-size: 22px;
+           letter-spacing: 4px; text-shadow: 0 0 8px #000, 0 0 3px #000;
+           display: none; }
+  #loader.ready #start { display: block; }
+  #stage:fullscreen { width: 100vw !important; height: 100vh;
+                      background: #000; }
+  #stage:fullscreen canvas { width: 100%; height: 100%;
+                             object-fit: contain; }
+  #stage:-webkit-full-screen { width: 100vw !important; height: 100vh;
+                               background: #000; }
+  #stage:-webkit-full-screen canvas { width: 100%; height: 100%;
+                                      object-fit: contain; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="canvas" width="1280" height="720" tabindex="-1"
+            oncontextmenu="event.preventDefault()"></canvas>
+    <div id="loader"><img src="theloader.jpg" alt="">
+      <div id="start">CLICK TO START</div></div>
+  </div>
+  <div id="controls">
+    <label>size <select id="size">
+      <option value="1280x720">1280 x 720</option>
+      <option value="1920x1080">1920 x 1080</option>
+      <option value="screen">this screen</option>
+    </select></label>
+    <label><input type="checkbox" id="muted" checked> muted</label>
+    <label>volume <input type="range" id="volume" min="0" max="10"
+                         step="1" value="10"></label>
+    <button id="full">fullscreen</button>
+  </div>
+  <div id="status">downloading...</div>
+  <table id="keys">
+    <tr><td>Space</td><td>pause and resume</td></tr>
+    <tr><td>.</td><td>step one frame (held: keeps stepping)</td></tr>
+    <tr><td>F</td><td>four times speed, on and off</td></tr>
+    <tr><td>]</td><td>skip to the next part</td></tr>
+    <tr><td>M</td><td>mute and unmute</td></tr>
+    <tr><td>+ -</td><td>volume up and down</td></tr>
+    <tr><td>drag</td><td>look around; let go and it eases back (paused: it stays)</td></tr>
+    <tr><td>C</td><td>hold the look while running too, on and off</td></tr>
+    <tr><td>wheel</td><td>zoom in and out; it stays (Ctrl: finer)</td></tr>
+    <tr><td>middle, right click</td><td>back to the demo's view and lens</td></tr>
+    <tr><td>Enter, double-click</td><td>fullscreen; Esc leaves it</td></tr>
+  </table>
+</div>
+<script>
+  (function () {
+    var stage = document.getElementById('stage');
+    var canvas = document.getElementById('canvas');
+    var loader = document.getElementById('loader');
+    var menu = document.getElementById('size');
+    var muted = document.getElementById('muted');
+    var volume = document.getElementById('volume');
+    var full = document.getElementById('full');
+    var m = /[?&]size=([0-9]+x[0-9]+|screen)/.exec(location.search);
+    var choice = m ? m[1] : '1280x720';
+    var w = 1280, h = 720, d, ready = false, started = false, ended = false, mod, pollId;
+
+    if (choice === 'screen') {
+      w = Math.round(screen.width * (window.devicePixelRatio || 1));
+      h = Math.round(screen.height * (window.devicePixelRatio || 1));
+      menu.options[2].textContent = 'this screen (' + w + ' x ' + h + ')';
+    } else {
+      d = choice.split('x');
+      w = parseInt(d[0], 10);
+      h = parseInt(d[1], 10);
+    }
+    if (!(w >= 320 && h >= 200 && w <= 4096 && h <= 4096)) {
+      w = 1280;
+      h = 720;
+      choice = '1280x720';
+    }
+    if (choice !== '1280x720' && choice !== '1920x1080' && choice !== 'screen') {
+      menu.add(new Option(w + ' x ' + h, choice), 0);
+    }
+    menu.value = choice;
+    canvas.width = w;
+    canvas.height = h;
+
+    /* The box as large as the window allows, at the picture's shape. */
+    function fit() {
+      var room = window.innerHeight - 290;
+      var bw = Math.min(window.innerWidth - 24, Math.max(room, 200) * w / h);
+      stage.style.width = Math.floor(bw) + 'px';
+    }
+    function isFull() {
+      return document.fullscreenElement || document.webkitFullscreenElement;
+    }
+    function toggle() {
+      if (isFull()) {
+        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      } else {
+        (stage.requestFullscreen || stage.webkitRequestFullscreen).call(stage);
+      }
+    }
+    /* The page's box and slider into the demo. */
+    function push() {
+      if (ready) {
+        mod._web_set_muted(muted.checked ? 1 : 0);
+        mod._web_set_volume(parseInt(volume.value, 10));
+      }
+    }
+    /* The demo's mute and volume onto the page, as M, + and - change them. */
+    function poll() {
+      if (document.activeElement !== volume) {
+        volume.value = mod._web_volume();
+      }
+      muted.checked = mod._web_muted() !== 0;
+    }
+    function start() {
+      if (ended) {
+        location.reload();
+        return;
+      }
+      if (!ready || started) {
+        return;
+      }
+      started = true;
+      loader.style.display = 'none';
+      mod._web_start();
+      canvas.focus();
+    }
+
+    menu.addEventListener('change', function () {
+      location.search = '?size=' + menu.value;
+    });
+    muted.addEventListener('change', function () {
+      push();
+      muted.blur();
+    });
+    volume.addEventListener('input', push);
+    volume.addEventListener('change', function () {
+      volume.blur();
+    });
+    full.addEventListener('click', function () {
+      toggle();
+      full.blur();
+    });
+    canvas.addEventListener('dblclick', toggle);
+    loader.addEventListener('click', start);
+    window.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        toggle();
+      }
+    });
+    window.addEventListener('resize', fit);
+    fit();
+
+    mod = window.Module = {
+      rupWidth: w,
+      rupHeight: h,
+      demoReady: function () {
+        ready = true;
+        push();
+        pollId = setInterval(poll, 500);
+        loader.className = 'ready';
+        document.getElementById('status').textContent = '';
+      },
+      demoEnded: function () {
+        var gl = canvas.getContext('webgl2');
+        var lose = gl && gl.getExtension('WEBGL_lose_context');
+
+        ended = true;
+        clearInterval(pollId);
+        if (mod.ruptureMusic && mod.ruptureMusic.ctx) {
+          mod.ruptureMusic.ctx.close();
+        }
+        if (lose) {
+          lose.loseContext();
+        }
+        document.getElementById('start').textContent = 'THE END - CLICK TO WATCH AGAIN';
+        loader.className = 'ready';
+        loader.style.display = '';
+      },
+      canvas: canvas,
+      print: function (t) { console.log(t); },
+      printErr: function (t) { console.error(t); },
+      setStatus: function (t) {
+        document.getElementById('status').textContent = t || (ready ? '' : 'loading...');
+      }
+    };
+  })();
+</script>
+<script async src="rupture.js"></script>
+</body>
+</html>

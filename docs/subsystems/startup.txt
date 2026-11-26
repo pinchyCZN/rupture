@@ -1,0 +1,275 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                         THE STARTUP SEQUENCE
+
+
+Abstract
+
+   From the CRT entry point to the first demo frame: the setup
+   dialog, the window and GL context, the Cg context, the
+   construction of every part, and the start of the music. The
+   windowing code is the NeHe OpenGL framework, and it already has a
+   windowed mode, chosen from the setup dialog.
+
+Table of Contents
+
+   1. The call chain
+   2. The setup dialog
+   3. The window and the GL context
+   4. Building the parts
+   5. The main loop
+   6. Running it in a window
+   7. Open questions
+
+1.  The call chain
+
+    entry 0x004c403f
+     ___tmainCRTStartup 0x004c3ec1      MSVC 2008 CRT [verified, FID]
+      WinMain 0x00448cc0
+       Setup_EnumDisplayModes 0x00442630
+       DialogBoxParamA(0x65, Setup_DialogProc 0x0043dca0)
+       Window_Create 0x00448880
+        Window_Resize 0x0043cbe0
+        Cg_Init 0x0044cea0
+        Demo_InitGL 0x00447ad0
+         Demo_Init 0x00447390          builds every part
+        Font_Build 0x0044cb40
+       loop: Demo_Frame 0x00447b40, SwapBuffers
+       Window_Kill 0x0043ccc0
+
+   Every name above is in the database with a plate comment carrying
+   its instruction-level evidence.
+
+2.  The setup dialog
+
+   Dialog resource 0x65, titled "Rupture by ASD - 2009" [verified,
+   .rsrc]. WinMain shows it when g_showSetupDialog (0x0050bbd9) is
+   non-zero, and that byte is initialised to 1 [verified], so it
+   appears on every normal run.
+
+   +-------+-------------+------------------------+--------------------+
+   | ID    | Label       | Sets                   | Default            |
+   +=======+=============+========================+====================+
+   | 1     | Run ...     | closes the dialog      |                    |
+   +-------+-------------+------------------------+--------------------+
+   | 2     | Quit        | _exit(0)               |                    |
+   +-------+-------------+------------------------+--------------------+
+   | 0x3f3 | Antialiased | g_antialiased          | checked            |
+   +-------+-------------+------------------------+--------------------+
+   | 0x3f4 | Windowed    | g_fullscreen = !value  | unchecked          |
+   +-------+-------------+------------------------+--------------------+
+   | 0x3f5 | Force 16:9  | g_force16x9            | checked            |
+   +-------+-------------+------------------------+--------------------+
+   | 0x3f6 | resolution  | g_windowWidth/Height   | 1280x720 if listed,|
+   |       | (combo)     |                        | else 1024x768      |
+   +-------+-------------+------------------------+--------------------+
+
+   All of it is [verified] from Setup_DialogProc. The resolution list
+   is built by Setup_EnumDisplayModes from EnumDisplaySettingsA:
+   unique modes under 2048x2048, landscape, within an aspect bound
+   read from 0x004f3df8. Each entry is labelled "(16:9)" or "(16:10)"
+   by comparing its aspect against the doubles at 0x004f3dd8 and
+   0x004f3dc8 within the tolerance at 0x004f3dd0.
+
+   With Force 16:9 on, the view height is recomputed from the width
+   using the double at 0x004f3dd8; in windowed mode the window height
+   follows it, in fullscreen only the view does [verified]. The height
+   is the width over 16/9 in x87 precision, stored as a float, then
+   truncated: 1280 gives 720, 1024 gives 576 [verified, 0x0043dde7].
+
+   The labels are " %d x %d  (16:10)" when the aspect is within 0.01
+   of 1.6 (k_dbl_1_6, k_dbl_0_01), tested first, " %d x %d  (16:9)"
+   within 0.01 of 16/9 (k_dbl_16_9), and " %d x %d       " otherwise.
+   The mode list keeps the driver's order, each mode once, the height
+   no more than the width, both under 2048 and neither side over 1.8
+   (k_dbl_1_8) times the other [verified, 0x00442630].
+   WM_INITDIALOG also checks a radio group 0x3ea..0x3eb, and Run reads
+   0x3ea..0x3ec, but the template has no such controls [verified,
+   .rsrc]. The template is 179 x 88 dialog units in Arial 10, and its
+   three check boxes are push-like (BS_PUSHLIKE) [verified, .rsrc].
+
+   The port carries the template in src/rupture/host/rupture.rc and
+   the two functions in host_win32.cpp, with a Muted box of its own in
+   Antialiased's place, and shows the dialog only when started with no
+   arguments. Fullscreen there is borderless and never changes the
+   display mode: it covers the monitor the dialog is on, at that
+   monitor's own resolution, which the list then shows alone; with
+   Force 16:9 the view is centred with black above and below. The modes
+   listed for a window are that monitor's, and the window opens centred
+   on it. F1 in the dialog, also the port's, shows the keys, the mouse
+   and the command-line options in a message box.
+
+   When the dialog is not shown, WinMain forces 1280x720 for both the
+   window and the view [verified].
+
+   The preselection is two immediate compares in WM_INITDIALOG:
+   0x500 at 0x0043e051 and 0x2d0 at 0x0043e06e pick the first mode
+   that is 1280x720. A found index of 0 counts as not found, and the
+   code then searches the same way for 0x400 x 0x300, 1024x768
+   [verified, the disassembly]. The combo lists every mode that
+   passes Setup_EnumDisplayModes' filter, so its length is the
+   display driver's.
+
+   WM_INITDIALOG loads CheckDlgButton from its import slot at
+   0x004f3330 into ESI once, at 0x0043de4f, and calls it for 0x3f3
+   then 0x3f5; nothing else reads that slot [verified,
+   cross-references]. Windowed, 0x3f4, is never ticked.
+
+   The demo takes no command line: WinMain reads only its instance
+   handle [verified].
+
+3.  The window and the GL context
+
+   Window_Create is NeHe's CreateGLWindow: window class "OpenGL" and
+   the same error strings [verified]. The fifth argument is
+   g_fullscreen.
+
+   +------------+------------------------------+----------------------+
+   | Mode       | Display                      | Window style         |
+   +============+==============================+======================+
+   | fullscreen | ChangeDisplaySettingsA with  | WS_POPUP, cursor     |
+   |            | CDS_FULLSCREEN at the chosen | hidden               |
+   |            | width, height and 32 bpp     |                      |
+   +------------+------------------------------+----------------------+
+   | windowed   | unchanged                    | 0x80000 (WS_SYSMENU) |
+   +------------+------------------------------+----------------------+
+
+   If the mode change fails, it offers windowed mode in a message box
+   titled "ASD GL ;-)" [verified].
+
+   The pixel format asks for 32-bit colour, 24-bit depth and a 1-bit
+   alpha, double buffered [verified]. Window_Resize sets the viewport
+   and a gluPerspective projection from the doubles at 0x004f3ca8
+   (field of view), 0x004f3cb0 (near) and 0x004f3bd0 (far).
+
+   Cg_Init picks the fragment profile with cgGLGetLatestProfile and a
+   fixed vertex profile 0x1804, switching to 0x1806 and 7000 when
+   GL_VENDOR contains "ATI", then creates the Cg context [verified].
+   0x1804 is vp30, 0x1806 arbvp1 and 7000 arbfp1 [verified, the
+   release's cg.dll, cgGetProfile].
+
+4.  Building the parts
+
+   Demo_Init constructs every part before the first frame. Each
+   constructor's class is read from the vtable it installs, through
+   the RTTI complete object locator [verified]:
+
+   +------------+------------------------+----------------+-----------+
+   | Global     | Class                  | Constructor    | new size  |
+   +============+========================+================+===========+
+   | 0x00512794 | part_start             | 0x00446440     |           |
+   +------------+------------------------+----------------+-----------+
+   | 0x0051276c | part_video             | 0x00446730     |           |
+   +------------+------------------------+----------------+-----------+
+   | 0x00512770 | part_motor             | 0x00446860     |           |
+   +------------+------------------------+----------------+-----------+
+   | 0x00512774 | part_truck             | 0x004469c0     |           |
+   +------------+------------------------+----------------+-----------+
+   | 0x00512778 | part_rail              | 0x00446bc0     | 0x16d0    |
+   +------------+------------------------+----------------+-----------+
+   | 0x0051277c | part_boat              | 0x00446de0     | 0x1220    |
+   +------------+------------------------+----------------+-----------+
+   | 0x00512780 | part_city              | 0x00446f30     | 0x13f8    |
+   +------------+------------------------+----------------+-----------+
+   | 0x00512784 | part_end               | 0x00447110     | 0x1420    |
+   +------------+------------------------+----------------+-----------+
+
+   0x0051276c is g_parts[0]; Demo_Frame walks nine pointers from
+   there [verified], seven of which Demo_Init fills.
+
+   part_start is built first, and its Init then Frame are called
+   once with a SwapBuffers after: the loading screen, a single
+   pre-rendered image, textures/theloader.jpg, drawn on one quad with
+   Gfx_DrawQuad [verified]. It is not animated and holds while the
+   other parts construct. Every other part has Init called once and
+   the dword at +8 set to 1 [verified].
+
+   part_start::Init (0x0049f800) loads the image, 1024x1024, into
+   texture slot 10. part_start::Frame (0x0049f830) clears to black and
+   draws it with a 65 degree perspective (0x004f4938, plus the
+   context's field-of-view offset) at the view's aspect, from 5
+   (0x004f40c8) on the z axis, the quad scaled by 3.3 (0x004f4e88)
+   [verified]. That view is 6.37 high at the quad, so the square image
+   is 103.6% of the screen's height, centred, with black beside it at
+   any width; the image is never stretched [inferred, from the
+   numbers]. Demo_Init calls it with a zero delta and the second
+   sequence object, then swaps (0x00447756) [verified]. The port draws
+   it the same way (src/rupture/demo/part_start.cpp), and its browser
+   page shows the same image, sized the same, while the data
+   downloads.
+
+   When maybe_g_demoMode (0x0050bbdc) is -1, only part_game is built,
+   into g_parts[0] [verified]. The byte is initialised to 1, so the
+   normal run builds the seven parts above. What -1 selects is open.
+
+   Music starts last: FSOUND_Init, FSOUND_Sample_Load, the FFT DSP
+   unit enabled, FSOUND_PlaySound - all guarded by
+   maybe_g_musicEnabled (0x0050bbc7, initialised 1) [verified].
+   Every FSOUND_PlaySound call in the exe - eleven, in Demo_Init,
+   part_game::Init and two unread functions - goes through the one
+   thunk at 0x004befc4 and its import slot at 0x004f3420 [verified,
+   cross-references].
+
+5.  The main loop
+
+   WinMain polls with PeekMessageA. When the queue is empty it calls
+   Demo_Frame if g_windowActive, then SwapBuffers whether or not;
+   WM_QUIT ends the loop [verified]. Escape, or Demo_Frame returning
+   false, starts the fade-out. Demo_Frame keeps the demo clock,
+   subsystems/clock.txt, and calls each part's Frame method; how the
+   parts take turns is subsystems/parts.txt.
+
+   Both ways out of Demo_Frame - the clock passing 401 and the end of
+   the Esc fade - run FSOUND_Close, Window_Kill, delete g_parts[0],
+   then _exit(0) at 0x0044857f or 0x004485b0 [verified]. That
+   function is Function ID's _exit but it runs the atexit list, and
+   the render context's static destructor (0x004424e0) then frees a
+   pointer that is not a heap block. The release ends in an access
+   violation, exit code 0xC0000005, on every Esc exit tried
+   [observed, two runs, stock and shimmed].
+
+   Closing the window takes a third way out: WM_CLOSE posts WM_QUIT,
+   WinMain's loop ends, Window_Kill runs and WinMain returns, and
+   ___tmainCRTStartup calls the same _exit at 0x004c3fdd. FMOD is not
+   closed on that route. It faults the same way [observed, WM_CLOSE
+   sent to the demo window].
+
+   At the end of the Esc fade, Demo_Frame first copies the
+   std::string g_clipboardText (0x0050bbe4) to the clipboard with
+   Clipboard_SetText [verified]. It starts empty and only the
+   developer rig's middle-click dump appends to it [verified,
+   subsystems/devcam.txt 3].
+
+   The exe also carries Console_Redirect (0x00405dd0), which opens a
+   console and re-binds its CRT stdin, stdout and stderr to it; nothing
+   calls it [verified].
+
+   Window_Proc keeps g_keys, 256 bytes indexed by virtual-key code,
+   from WM_KEYDOWN and WM_KEYUP [verified]. Its mouse and arrow-key
+   cases are the developer camera rig, subsystems/devcam.txt.
+
+6.  Running it in a window
+
+   No patch is needed for a window. Tick "Windowed" in the setup
+   dialog: g_fullscreen is then 0, ChangeDisplaySettingsA is never
+   called and the window gets a caption style [verified].
+
+   Leaving it unticked is what changes the display mode. Windows
+   then rearranges the desktop around the new resolution, and
+   restores it in Window_Kill with ChangeDisplaySettingsA(NULL, 0)
+   [verified].
+
+7.  Open questions
+
+   o What sets 0x00514661? It forces the dialog, the music and
+     demo mode 1 in WinMain, and suppresses FUN_00440830 in
+     Demo_Frame.
+   o What does maybe_g_demoMode == -1 select - a standalone
+     part_game build?
+   o Window_Create positions the window at the result of
+     FUN_004bf9e0, a float-to-int conversion of a value not yet
+     traced.
+   o Which of the 10000 elements at ctx+0x290360 holds the bad
+     pointer at +0xbc, and what writes it - the cause of the crash
+     on exit.

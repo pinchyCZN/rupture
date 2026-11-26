@@ -1,0 +1,86 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                              THE .OBJ MESHES
+
+
+Abstract
+
+   Most of the demo's geometry is Wavefront .obj text exported from
+   Wings 3D 0.99.53, in meshes/. The files carry positions and faces
+   and nothing else - no normals, no texture coordinates. The demo's
+   own loader, Obj_Load, copies every face's corners into the face,
+   and Obj_DrawGroup draws each face as one GL_QUADS quad with one
+   normal computed from its edges. Every mesh is therefore flat
+   shaded, with a normal break at every crease.
+
+Table of Contents
+
+   1. What the files hold
+   2. How the demo reads them
+   3. How the demo draws them
+   4. Open questions
+
+1.  What the files hold
+
+   Each file starts "# Exported from Wings 3D 0.99.53", names a .mtl
+   file, and has "o", "g" and "usemtl" lines around
+
+    v x y z                     one line per vertex
+    f a// b// c//               a triangle
+    f a// b// c// d//           a quad
+
+   with 1-based vertex indices and the texture and normal slots left
+   empty [verified, every file in meshes/]. Of the 72 .obj files in
+   the release, only thecity.obj has "vn" lines or smoothing groups;
+   none has "vt", and test.obj is empty [verified, a line count of
+   each]. No .mtl file is in the release [verified, a search of the
+   whole release].
+
+   meshes/motorcycle.obj, for part_motor's bike: 9831 vertices, 8571
+   quads and 2204 triangles, about 1.3 x 2.5 x 3.9 units [verified].
+
+2.  How the demo reads them
+
+   Obj_Load (0x00466660) reads the "v" lines into a list of Vec4 -
+   {kind, x, y, z}, 16 bytes - and turns each "f" line into a 0x40
+   byte face record holding copies of its four corner positions; a
+   triangle repeats its third corner as the fourth. An "o" line closes
+   the current group [verified, the decompile; plate comment].
+
+   So after loading, no two faces share a vertex, and nothing in the
+   file decides the normals.
+
+   This path is separate from the .3ds path: .3ds files go through the
+   L3DS library, whose CalcNormals can smooth across faces [verified,
+   maybe_LMesh_CalcNormals and its one caller].
+
+3.  How the demo draws them
+
+   Obj_Draw (0x00455b80) compiles the groups into a GL display list on
+   the first call (GL_COMPILE_AND_EXECUTE) and calls the list after
+   that. Obj_DrawGroup (0x00451a10) emits, per face [verified]:
+
+    e1 = normalize(c2 - c1)
+    e0 = normalize(c0 - c1)
+    n  = e0 x e1
+    the largest of |n.x|, |n.y|, |n.z| times 1.4, tested in that
+        order, each test seeing the result of the one before
+    n  = -normalize(n)
+    glNormal3f(n), then glVertex3f of c0, c1, c2, c3
+
+   For a face wound counter-clockwise, -(e0 x e1) points out of the
+   front [inferred, the cross product]. The 1.4 pulls a slanted
+   face's normal toward its main axis; an axis-aligned face is
+   unchanged.
+
+   No texture coordinates or tangents are sent, so a vertex program
+   reading TEXCOORD0 or TEXCOORD1 sees GL's current values. DIFFUSE
+   is the current glColor, which the part sets before the draw.
+
+4.  Open questions
+
+   o The display-list id each Obj_Load call receives, and how many Obj
+     objects there are besides g_motorcycleObj.
+   o Which parts draw .3ds meshes, and with which L3DS optimisation
+     level.

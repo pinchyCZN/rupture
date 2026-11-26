@@ -1,0 +1,394 @@
+# demo struct map   format=demo-struct-map/1
+#
+# GENERATED from the Ghidra database by
+# tools/ghidra/demo_export_maps.java. Do not hand-edit:
+# the database is the source of truth and the next export
+# discards anything written here.
+#
+#   type,NAME,KIND,SIZE,SRC,ORIGIN[,note]
+#
+# struct and union members:
+#   <TAB>name,type,offset,count,size[,note]
+# enum members:
+#   <TAB>name,value
+# a typedef has no members; its target is the note.
+#
+# count is blank for a scalar, decimal for an array, NxM
+# for [N][M] with N outermost. size is the member total.
+# Hex carries 0x; offsets are at least four digits.
+#
+# SRC and ORIGIN come from the type's Ghidra description,
+# whose first line reads
+#     [verified] origin=0007e360  what the thing is
+# SRC is verified / inferred / observed / guess, and
+# untagged where the description says nothing - which
+# structmap.py check reports.
+#
+# PADS ARE EXPLICIT, as (pad) rows, so that members plus
+# pads equal SIZE exactly. check enforces it.
+#
+# Commas inside a name, type or note were replaced with
+# semicolons on export. Nothing else is escaped.
+
+type,CLIENT_ID,struct,0x8,untagged,
+	UniqueProcess,void *32,0x0000,,0x4
+	UniqueThread,void *32,0x0004,,0x4
+
+type,CatchGuardRN,struct,0x1,untagged,,PlaceHolder Structure
+
+type,DName,struct,0x1,untagged,,PlaceHolder Structure
+
+type,DNameNode,struct,0x1,untagged,,PlaceHolder Structure
+
+type,DNameStatusNode,struct,0x1,untagged,,PlaceHolder Structure
+
+type,EHExceptionRecord,struct,0x1,untagged,,PlaceHolder Structure
+
+type,EHRegistrationNode,struct,0x1,untagged,,PlaceHolder Structure
+
+type,HeapManager,struct,0x1,untagged,,PlaceHolder Structure
+
+type,IMAGE_DATA_DIRECTORY,struct,0x8,untagged,
+	VirtualAddress,ImageBaseOffset32,0x0000,,0x4
+	Size,dword,0x0004,,0x4
+
+type,IMAGE_DEBUG_DIRECTORY,struct,0x1C,untagged,
+	Characteristics,dword,0x0000,,0x4
+	TimeDateStamp,dword,0x0004,,0x4
+	MajorVersion,word,0x0008,,0x2
+	MinorVersion,word,0x000A,,0x2
+	Type,dword,0x000C,,0x4
+	SizeOfData,dword,0x0010,,0x4
+	AddressOfRawData,dword,0x0014,,0x4
+	PointerToRawData,dword,0x0018,,0x4
+
+type,IMAGE_FILE_HEADER,struct,0x14,untagged,
+	Machine,word,0x0000,,0x2,332
+	NumberOfSections,word,0x0002,,0x2
+	TimeDateStamp,dword,0x0004,,0x4
+	PointerToSymbolTable,dword,0x0008,,0x4
+	NumberOfSymbols,dword,0x000C,,0x4
+	SizeOfOptionalHeader,word,0x0010,,0x2
+	Characteristics,word,0x0012,,0x2
+
+type,IMAGE_LOAD_CONFIG_DIRECTORY32,struct,0x48,untagged,
+	Size,dword,0x0000,,0x4
+	TimeDateStamp,dword,0x0004,,0x4
+	MajorVersion,word,0x0008,,0x2
+	MinorVersion,word,0x000A,,0x2
+	GlobalFlagsClear,dword,0x000C,,0x4
+	GlobalFlagsSet,dword,0x0010,,0x4
+	CriticalSectionDefaultTimeout,dword,0x0014,,0x4
+	DeCommitFreeBlockThreshold,dword,0x0018,,0x4
+	DeCommitTotalFreeThreshold,dword,0x001C,,0x4
+	LockPrefixTable,pointer32,0x0020,,0x4
+	MaximumAllocationSize,dword,0x0024,,0x4
+	VirtualMemoryThreshold,dword,0x0028,,0x4
+	ProcessHeapFlags,dword,0x002C,,0x4
+	ProcessAffinityMask,dword,0x0030,,0x4
+	CsdVersion,word,0x0034,,0x2
+	DependentLoadFlags,word,0x0036,,0x2
+	EditList,pointer32,0x0038,,0x4
+	SecurityCookie,pointer32,0x003C,,0x4
+	SEHandlerTable,pointer32,0x0040,,0x4
+	SEHandlerCount,dword,0x0044,,0x4
+
+type,IMAGE_NT_HEADERS32,struct,0xF8,untagged,
+	Signature,char,0x0000,4,0x4
+	FileHeader,IMAGE_FILE_HEADER,0x0004,,0x14
+	OptionalHeader,IMAGE_OPTIONAL_HEADER32,0x0018,,0xE0
+
+type,IMAGE_OPTIONAL_HEADER32,struct,0xE0,untagged,
+	Magic,word,0x0000,,0x2
+	MajorLinkerVersion,byte,0x0002,,0x1
+	MinorLinkerVersion,byte,0x0003,,0x1
+	SizeOfCode,dword,0x0004,,0x4
+	SizeOfInitializedData,dword,0x0008,,0x4
+	SizeOfUninitializedData,dword,0x000C,,0x4
+	AddressOfEntryPoint,ImageBaseOffset32,0x0010,,0x4
+	BaseOfCode,ImageBaseOffset32,0x0014,,0x4
+	BaseOfData,ImageBaseOffset32,0x0018,,0x4
+	ImageBase,pointer32,0x001C,,0x4
+	SectionAlignment,dword,0x0020,,0x4
+	FileAlignment,dword,0x0024,,0x4
+	MajorOperatingSystemVersion,word,0x0028,,0x2
+	MinorOperatingSystemVersion,word,0x002A,,0x2
+	MajorImageVersion,word,0x002C,,0x2
+	MinorImageVersion,word,0x002E,,0x2
+	MajorSubsystemVersion,word,0x0030,,0x2
+	MinorSubsystemVersion,word,0x0032,,0x2
+	Win32VersionValue,dword,0x0034,,0x4
+	SizeOfImage,dword,0x0038,,0x4
+	SizeOfHeaders,dword,0x003C,,0x4
+	CheckSum,dword,0x0040,,0x4
+	Subsystem,word,0x0044,,0x2
+	DllCharacteristics,word,0x0046,,0x2
+	SizeOfStackReserve,dword,0x0048,,0x4
+	SizeOfStackCommit,dword,0x004C,,0x4
+	SizeOfHeapReserve,dword,0x0050,,0x4
+	SizeOfHeapCommit,dword,0x0054,,0x4
+	LoaderFlags,dword,0x0058,,0x4
+	NumberOfRvaAndSizes,dword,0x005C,,0x4
+	DataDirectory,IMAGE_DATA_DIRECTORY,0x0060,16,0x80
+
+type,IMAGE_RESOURCE_DATA_ENTRY,struct,0x10,untagged,
+	OffsetToData,dword,0x0000,,0x4
+	Size,dword,0x0004,,0x4
+	CodePage,dword,0x0008,,0x4
+	Reserved,dword,0x000C,,0x4
+
+type,IMAGE_RESOURCE_DIRECTORY,struct,0x10,untagged,
+	Characteristics,dword,0x0000,,0x4
+	TimeDateStamp,dword,0x0004,,0x4
+	MajorVersion,word,0x0008,,0x2
+	MinorVersion,word,0x000A,,0x2
+	NumberOfNamedEntries,word,0x000C,,0x2
+	NumberOfIdEntries,word,0x000E,,0x2
+
+type,IMAGE_RESOURCE_DIRECTORY_ENTRY,struct,0x8,untagged,
+	NameUnion,IMAGE_RESOURCE_DIRECTORY_ENTRY_NameUnion,0x0000,,0x4
+	DirectoryUnion,IMAGE_RESOURCE_DIRECTORY_ENTRY_DirectoryUnion,0x0004,,0x4
+
+type,IMAGE_RESOURCE_DIRECTORY_ENTRY_DirectoryStruct,struct,0x4,untagged,
+	OffsetToDirectory,dword:31,0x0000,,0x4
+	DataIsDirectory,dword:1,0x0003,,0x1
+
+type,IMAGE_RESOURCE_DIRECTORY_ENTRY_DirectoryUnion,union,0x4,untagged,
+	OffsetToData,dword,0x0000,,0x4
+	IMAGE_RESOURCE_DIRECTORY_ENTRY_DirectoryStruct,IMAGE_RESOURCE_DIRECTORY_ENTRY_DirectoryStruct,0x0000,,0x4
+
+type,IMAGE_RESOURCE_DIRECTORY_ENTRY_NameStruct,struct,0x4,untagged,
+	NameOffset,dword:31,0x0000,,0x4
+	NameIsString,dword:1,0x0003,,0x1
+
+type,IMAGE_RESOURCE_DIRECTORY_ENTRY_NameUnion,union,0x4,untagged,
+	IMAGE_RESOURCE_DIRECTORY_ENTRY_NameStruct,IMAGE_RESOURCE_DIRECTORY_ENTRY_NameStruct,0x0000,,0x4
+	Name,dword,0x0000,,0x4
+	Id,word,0x0000,,0x2
+
+type,IMAGE_SECTION_HEADER,struct,0x28,untagged,
+	Name,char,0x0000,8,0x8
+	Misc,Misc,0x0008,,0x4
+	VirtualAddress,ImageBaseOffset32,0x000C,,0x4
+	SizeOfRawData,dword,0x0010,,0x4
+	PointerToRawData,dword,0x0014,,0x4
+	PointerToRelocations,dword,0x0018,,0x4
+	PointerToLinenumbers,dword,0x001C,,0x4
+	NumberOfRelocations,word,0x0020,,0x2
+	NumberOfLinenumbers,word,0x0022,,0x2
+	Characteristics,SectionFlags,0x0024,,0x4
+
+type,Misc,union,0x4,untagged,
+	PhysicalAddress,dword,0x0000,,0x4
+	VirtualSize,dword,0x0000,,0x4
+
+type,Replicator,struct,0x1,untagged,,PlaceHolder Structure
+
+type,Rupture_Shard,struct,0x228,verified,0045bcf0,one walls.obj shard: a tetrahedron; its flight state and its two recorded tracks (effects/video.txt 3.4)
+	c,Rupture_Vec4,0x0000,4,0x40,corners; relative to pos once centred
+	pos,Rupture_Vec4,0x0040,,0x10
+	rest,Rupture_Vec4,0x0050,,0x10,the centre at rest
+	axis,Rupture_Vec4,0x0060,,0x10,unit spin axis
+	v,Rupture_Vec4,0x0070,,0x10
+	a,Rupture_Vec4,0x0080,,0x10
+	angle,float,0x0090,,0x4
+	spin,float,0x0094,,0x4
+	turned,Rupture_Vec4,0x0098,4,0x40,corners after Shard_Rotate
+	n,Rupture_Vec4,0x00D8,4,0x40,face normals
+	turnedN,Rupture_Vec4,0x0118,4,0x40
+	(pad),undefined,0x0158,,0x8
+	posTrack,Rupture_Track,0x0160,,0x60
+	angleTrack,Rupture_Track,0x01C0,,0x60,(angle; 0; 0) per record
+	s,float,0x0220,,0x4,the record index Shard_Seek was given
+	(pad),undefined,0x0224,,0x4
+
+type,Rupture_Track,struct,0x60,verified,004b3ed0,a key track Track_Eval reads: Catmull-Rom through points; loop byte +0x4c; count +0x50. Track_Clear 0040d0d0 empties the three vectors; sets +0x48 = 3; +0x50 = 0; +0x58 = 0.0. Shard records hold two at +0x160 and +0x1c0; part_motor's road is this+0x1188
+	points,Rupture_Vec4Vector,0x0000,,0x18,what Track_Eval interpolates
+	(pad),undefined,0x0018,,0x30
+	mode,int,0x0048,,0x4,3 after Track_Clear; meaning unread
+	loop,byte,0x004C,,0x1
+	(pad),undefined,0x004D,,0x3
+	count,int,0x0050,,0x4
+	(pad),undefined,0x0054,,0x4
+	unk58,double,0x0058,,0x8,0.0 after Track_Clear; meaning unread
+
+type,Rupture_Vec4,struct,0x10,verified,004b8dd0,the demo's 16-byte vector: kind (0 unset; 1 a vector; 2 normalised by Vec4_Normalize); x; y; z
+	kind,int,0x0000,,0x4,0 unset; 1 vector; 2 unit
+	x,float,0x0004,,0x4
+	y,float,0x0008,,0x4
+	z,float,0x000C,,0x4
+
+type,Rupture_Vec4Vector,struct,0x18,inferred,0040d870,MSVC 2005 std::vector<Vec4>; 0x18 bytes: first; last; end at +0xc; +0x10; +0x14; push_back hands +8 to uninitialized_fill_n as the allocator
+	(pad),undefined,0x0000,,0x8
+	alval,undefined4,0x0008,,0x4,the allocator argument
+	first,Rupture_Vec4 *,0x000C,,0x4
+	last,Rupture_Vec4 *,0x0010,,0x4
+	end,Rupture_Vec4 *,0x0014,,0x4
+
+type,TranslatorGuardRN,struct,0x1,untagged,,PlaceHolder Structure
+
+type,TypeDescriptor,struct,0x8,untagged,
+	pVFTable,void *,0x0000,,0x4
+	spare,void *,0x0004,,0x4
+	name,char,0x0008,0,0x0
+
+type,UnDecorator,struct,0x1,untagged,,PlaceHolder Structure
+
+type,_LocaleUpdate,struct,0x1,untagged,,PlaceHolder Structure
+
+type,_Locimp,struct,0x1,untagged,,PlaceHolder Structure
+
+type,_Locinfo,struct,0x1,untagged,,PlaceHolder Structure
+
+type,_Lockit,struct,0x1,untagged,,PlaceHolder Structure
+
+type,_Mutex,struct,0x1,untagged,,PlaceHolder Structure
+
+type,_String_const_iterator<char;struct_std::char_traits<char>;class_std::allocator<char>_>,struct,0x1,untagged,,PlaceHolder Structure
+
+type,__non_rtti_object,struct,0x1,untagged,,PlaceHolder Class Structure
+
+type,__type_info_node,struct,0x1,untagged,,PlaceHolder Structure
+
+type,_s_CatchableType,struct,0x1,untagged,,PlaceHolder Structure
+
+type,_s_ESTypeList,struct,0x8,untagged,
+	nCount,int,0x0000,,0x4
+	pTypeArray,HandlerType *,0x0004,,0x4
+
+type,_s_FuncInfo,struct,0x24,untagged,
+	magicNumber_and_bbtFlags,uint,0x0000,,0x4
+	maxState,__ehstate_t,0x0004,,0x4
+	pUnwindMap,UnwindMapEntry *,0x0008,,0x4
+	nTryBlocks,uint,0x000C,,0x4
+	pTryBlockMap,TryBlockMapEntry *,0x0010,,0x4
+	nIPMapEntries,uint,0x0014,,0x4
+	pIPToStateMap,void *,0x0018,,0x4
+	pESTypeList,ESTypeList *,0x001C,,0x4
+	EHFlags,int,0x0020,,0x4
+
+type,_s_HandlerType,struct,0x10,untagged,
+	adjectives,uint,0x0000,,0x4
+	pType,TypeDescriptor *,0x0004,,0x4
+	dispCatchObj,ptrdiff_t,0x0008,,0x4
+	addressOfHandler,void *,0x000C,,0x4
+
+type,_s_TryBlockMapEntry,struct,0x14,untagged,
+	tryLow,__ehstate_t,0x0000,,0x4
+	tryHigh,__ehstate_t,0x0004,,0x4
+	catchHigh,__ehstate_t,0x0008,,0x4
+	nCatches,int,0x000C,,0x4
+	pHandlerArray,HandlerType *,0x0010,,0x4
+
+type,_s_UnwindMapEntry,struct,0x8,untagged,
+	toState,__ehstate_t,0x0000,,0x4
+	action,action *,0x0004,,0x4
+
+type,_s__RTTIBaseClassDescriptor,struct,0x1C,untagged,
+	pTypeDescriptor,TypeDescriptor *,0x0000,,0x4,ref to TypeDescriptor (RTTI 0) for class
+	numContainedBases,dword,0x0004,,0x4,count of extended classes in BaseClassArray (RTTI 2)
+	where,PMD,0x0008,,0xC,member displacement structure
+	attributes,dword,0x0014,,0x4,bit flags
+	pClassHierarchyDescriptor,RTTIClassHierarchyDescriptor *,0x0018,,0x4,ref to ClassHierarchyDescriptor (RTTI 3) for class
+
+type,_s__RTTIClassHierarchyDescriptor,struct,0x10,untagged,
+	signature,dword,0x0000,,0x4
+	attributes,dword,0x0004,,0x4,bit flags
+	numBaseClasses,dword,0x0008,,0x4,number of base classes (i.e. rtti1Count)
+	pBaseClassArray,RTTIBaseClassDescriptor * *,0x000C,,0x4,ref to BaseClassArray (RTTI 2)
+
+type,_s__RTTICompleteObjectLocator,struct,0x14,untagged,
+	signature,dword,0x0000,,0x4
+	offset,dword,0x0004,,0x4,offset of vbtable within class
+	cdOffset,dword,0x0008,,0x4,constructor displacement offset
+	pTypeDescriptor,TypeDescriptor *,0x000C,,0x4,ref to TypeDescriptor (RTTI 0) for class
+	pClassDescriptor,RTTIClassHierarchyDescriptor *,0x0010,,0x4,ref to ClassHierarchyDescriptor (RTTI 3)
+
+type,bad_alloc,struct,0x1,untagged,,PlaceHolder Class Structure
+
+type,bad_exception,struct,0x1,untagged,,PlaceHolder Class Structure
+
+type,bad_typeid,struct,0x1,untagged,,PlaceHolder Class Structure
+
+type,basic_string<char;struct_std::char_traits<char>;class_std::allocator<char>_>,struct,0x1,untagged,,PlaceHolder Structure
+
+type,exception,struct,0x1,untagged,,PlaceHolder Class Structure
+
+type,facet,struct,0x1,untagged,,PlaceHolder Structure
+
+type,ios_base,struct,0x1,untagged,,PlaceHolder Class Structure
+
+type,pDNameNode,struct,0x1,untagged,,PlaceHolder Structure
+
+type,pairNode,struct,0x1,untagged,,PlaceHolder Structure
+
+type,pcharNode,struct,0x1,untagged,,PlaceHolder Structure
+
+type,type_info,struct,0x1,untagged,,PlaceHolder Class Structure
+
+type,DNameStatus,enum,0x4,untagged,
+
+type,SectionFlags,enum,0x4,untagged,
+	IMAGE_SCN_TYPE_NO_PAD,0x8
+	IMAGE_SCN_RESERVED_0001,0x10
+	IMAGE_SCN_CNT_CODE,0x20
+	IMAGE_SCN_CNT_INITIALIZED_DATA,0x40
+	IMAGE_SCN_CNT_UNINITIALIZED_DATA,0x80
+	IMAGE_SCN_LNK_OTHER,0x100
+	IMAGE_SCN_LNK_INFO,0x200
+	IMAGE_SCN_RESERVED_0040,0x400
+	IMAGE_SCN_LNK_REMOVE,0x800
+	IMAGE_SCN_LNK_COMDAT,0x1000
+	IMAGE_SCN_GPREL,0x8000
+	IMAGE_SCN_MEM_16BIT,0x20000
+	IMAGE_SCN_MEM_PURGEABLE,0x20000
+	IMAGE_SCN_MEM_LOCKED,0x40000
+	IMAGE_SCN_MEM_PRELOAD,0x80000
+	IMAGE_SCN_ALIGN_1BYTES,0x100000
+	IMAGE_SCN_ALIGN_2BYTES,0x200000
+	IMAGE_SCN_ALIGN_4BYTES,0x300000
+	IMAGE_SCN_ALIGN_8BYTES,0x400000
+	IMAGE_SCN_ALIGN_16BYTES,0x500000
+	IMAGE_SCN_ALIGN_32BYTES,0x600000
+	IMAGE_SCN_ALIGN_64BYTES,0x700000
+	IMAGE_SCN_ALIGN_128BYTES,0x800000
+	IMAGE_SCN_ALIGN_256BYTES,0x900000
+	IMAGE_SCN_ALIGN_512BYTES,0xA00000
+	IMAGE_SCN_ALIGN_1024BYTES,0xB00000
+	IMAGE_SCN_ALIGN_2048BYTES,0xC00000
+	IMAGE_SCN_ALIGN_4096BYTES,0xD00000
+	IMAGE_SCN_ALIGN_8192BYTES,0xE00000
+	IMAGE_SCN_LNK_NRELOC_OVFL,0x1000000
+	IMAGE_SCN_MEM_DISCARDABLE,0x2000000
+	IMAGE_SCN_MEM_NOT_CACHED,0x4000000
+	IMAGE_SCN_MEM_NOT_PAGED,0x8000000
+	IMAGE_SCN_MEM_SHARED,0x10000000
+	IMAGE_SCN_MEM_EXECUTE,0x20000000
+	IMAGE_SCN_MEM_READ,0x40000000
+	IMAGE_SCN_MEM_WRITE,0x80000000
+
+type,Tokens,enum,0x4,untagged,
+
+type,_EXCEPTION_DISPOSITION,enum,0x4,untagged,
+
+type,event,enum,0x4,untagged,
+
+type,ESTypeList,typedef,0x8,untagged,,-> _s_ESTypeList
+
+type,FuncInfo,typedef,0x24,untagged,,-> _s_FuncInfo
+
+type,HandlerType,typedef,0x10,untagged,,-> _s_HandlerType
+
+type,RTTIBaseClassDescriptor,typedef,0x1C,untagged,,-> _s__RTTIBaseClassDescriptor
+
+type,RTTIClassHierarchyDescriptor,typedef,0x10,untagged,,-> _s__RTTIClassHierarchyDescriptor
+
+type,RTTICompleteObjectLocator,typedef,0x14,untagged,,-> _s__RTTICompleteObjectLocator
+
+type,TryBlockMapEntry,typedef,0x14,untagged,,-> _s_TryBlockMapEntry
+
+type,UnwindMapEntry,typedef,0x8,untagged,,-> _s_UnwindMapEntry
+
+type,__int64,typedef,0x8,untagged,,-> longlong; Signed Long Long Integer (compiler-specific size)
+
+type,__uint64,typedef,0x8,untagged,,-> ulonglong; Unsigned Long Long Integer (compiler-specific size)

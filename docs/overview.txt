@@ -1,0 +1,227 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                          RUPTURE - THE DEMO
+
+
+Abstract
+
+   The demo's own facts: the release, the file, its sections, the
+   libraries it links, the part classes its RTTI names, and the data
+   it loads. Read it before any effect note.
+
+Table of Contents
+
+   1. The release
+   2. The file
+   3. Sections
+   4. Libraries
+   5. The parts
+   6. The data it loads
+   7. Status
+   8. Open questions
+
+1.  The release
+
+   RUPTURE by andromeda software development, presented at The
+   Gathering 2009 [verified, file_id.diz]. Credits: Navis, aMUSiC,
+   ch3, iM, amoivikos, Leviathan, Liska. It requires "OpenGL with 3.0
+   pixel and vertex shaders" and credits FMOD, OpenCV and Cg, and the
+   INRIA GAMMA 3D mesh database for some models [verified,
+   file_id.diz].
+
+   +------------------+------------------------------------------------+
+   | Release content  | What                                           |
+   +==================+================================================+
+   | ASD-Rapture.exe  | the executable, SHA-1 041f4185b75bb8d7ee7933   |
+   |                  | 1321c2845610a321b9                             |
+   +------------------+------------------------------------------------+
+   | cg cgGL glew32   | the DLLs it imports                            |
+   | glut32 fmod      |                                                |
+   | cv110 cxcore110  |                                                |
+   | highgui110       |                                                |
+   +------------------+------------------------------------------------+
+   | msvcr80 msvcp80  | MSVC 2005 runtime, dated 2012 - not imported   |
+   | msvcm80 vcomp    | by the exe [verified]; presumably for the      |
+   |                  | OpenCV DLLs [guess]                            |
+   +------------------+------------------------------------------------+
+   | cgeffects/       | 333 Cg shader sources, most named .cpp         |
+   +------------------+------------------------------------------------+
+   | meshes/          | 78 files, .obj and .3ds                        |
+   +------------------+------------------------------------------------+
+   | textures/        | 8 images                                       |
+   +------------------+------------------------------------------------+
+   | music/           | one MP3, "aMUSiC and Leviathan - Throw Navis   |
+   |                  | Off The Train"                                 |
+   +------------------+------------------------------------------------+
+   | test_video2/     | 840 numbered PNG frames                        |
+   +------------------+------------------------------------------------+
+
+2.  The file
+
+   +-----------------+-------------------------------------------------+
+   | File            | reverse/ghidra/ASD-Rapture.exe                  |
+   +-----------------+-------------------------------------------------+
+   | Size            | 1,212,416 bytes                                 |
+   +-----------------+-------------------------------------------------+
+   | Format          | PE32, i386, Windows GUI subsystem [verified]    |
+   +-----------------+-------------------------------------------------+
+   | Link timestamp  | 2009-04-10 23:06:06 UTC [verified]              |
+   +-----------------+-------------------------------------------------+
+   | Image base      | 0x00400000, no DYNAMICBASE flag [verified]      |
+   +-----------------+-------------------------------------------------+
+   | Entry point     | 0x004c403f [verified]                           |
+   +-----------------+-------------------------------------------------+
+   | Compiler        | MSVC, C++ with RTTI. The CRT is statically      |
+   |                 | linked Visual Studio 2008 [verified, Function   |
+   |                 | ID on ___tmainCRTStartup]                       |
+   +-----------------+-------------------------------------------------+
+   | Packing         | none - four ordinary sections, readable strings |
+   |                 | [verified]                                      |
+   +-----------------+-------------------------------------------------+
+
+   The file is named ASD-Rapture.exe; the demo is RUPTURE. The file
+   name is quoted as it is.
+
+   With no ASLR flag the image loads at its base, so a Ghidra address
+   is the live address in the running process [inferred, the flag;
+   to be confirmed on the first live attach].
+
+3.  Sections
+
+    name     VA          vsize       raw size    characteristics
+    .text    0x00401000  0x000f17fe  0x000f1800  0x60000020  code r-x
+    .rdata   0x004f3000  0x00017eba  0x00018000  0x40000040  r--
+    .data    0x0050b000  0x006182e4  0x00005800  0xc0000040  rw-
+    .rsrc    0x00b24000  0x00018b10  0x00018c00  0x40000040  r--
+
+   The database's memory map matches this [verified]. .data is 0x5800
+   bytes on disk and 0x6182e4 in memory: about 6 MB of
+   zero-initialised storage, so any global above 0x00510800 starts as
+   zero.
+
+4.  Libraries
+
+   Imported by name [verified, the import table]:
+
+   +------------------+------------------------------------------------+
+   | DLL              | What it is used for                            |
+   +==================+================================================+
+   | OPENGL32 GLU32   | all rendering; WGL for the context             |
+   +------------------+------------------------------------------------+
+   | glew32           | extensions: framebuffer objects, multitexture, |
+   |                  | 3D textures, draw buffers, point parameters    |
+   +------------------+------------------------------------------------+
+   | glut32           | glutSolidCube and glutWireCube only            |
+   +------------------+------------------------------------------------+
+   | cg cgGL          | shaders, loaded with cgCreateProgramFromFile   |
+   +------------------+------------------------------------------------+
+   | cv110 cxcore110  | OpenCV 1.1: image loading, file capture,       |
+   | highgui110       | contours, colour conversion, dilate, flip      |
+   +------------------+------------------------------------------------+
+   | fmod             | FSOUND playback, position, FFT spectrum        |
+   +------------------+------------------------------------------------+
+   | KERNEL32 USER32  | Windows; the window itself is raw Win32 - see  |
+   | GDI32 ADVAPI32   | subsystems/startup.txt                         |
+   +------------------+------------------------------------------------+
+
+   On the running path OpenCV only loads images: cvLoadImage reads
+   part_video's 838 test_video2 frames (effects/video.txt 1), which
+   FUN_0044eba0 flips and uploads, and part_motor's textures/bouno1.png,
+   kept as an image for maybe_Image_DrawHeightfield [verified, the
+   callers of each import]. The file capture,
+   dilation and contour calls sit in FUN_004b6b50, FUN_004b6540 and
+   FUN_0040e560, which nothing references, and FUN_004b6360, which
+   only they call: contours traced into tracks and written to a file,
+   a developer tool left in the build [verified; their purpose
+   inferred].
+
+   Statically linked third-party code, named by RTTI [verified]:
+   L3DS, LImporter, LObject, LMesh, LMaterial, LCamera, LLight (a
+   .3ds importer) and jpeg_decoder_stream / jpeg_decoder_file_stream
+   (a JPEG decoder). The JPEG decoder is Rich Geldreich's jpgd, older
+   than the first version in his jpeg-compressor repository (v1.03,
+   2011): the classes have no jpgd namespace and there is no
+   frequency-domain chroma upsampler [verified, RTTI and the
+   decoder's constants]. It runs its MMX IDCT, which the port
+   reproduces exactly (formats/jpeg.txt). Which .3ds importer this
+   is, is open.
+
+5.  The parts
+
+   RTTI names a base class parts and nine parts [verified]:
+
+    part_start  part_game  part_video  part_motor  part_truck
+    part_rail   part_boat  part_city   part_end
+
+   Demo_Init constructs them in that order, skipping part_game, which
+   is built only in an alternative mode [verified]. That is
+   construction order; the running order is open.
+   subsystems/startup.txt 4 has the table.
+
+6.  The data it loads
+
+   The executable holds file names of data it reads from disk
+   [verified, strings]: textures/*.jpg (R0, R1, bg08, blob41b,
+   caust00..caust30 in steps of 2, cloudt2, pattern5, theloader),
+   textures/bouno1.png, d.png, music//aMUSiC and Leviathan - Throw
+   Navis Off The Train.mp3, music//1.mp3 .. music//4.mp3,
+   music//g21.mp3 .. g24.mp3, music//game_music2.mp3, Scalpel.mp3,
+   Train.mp3, state.txt and //3dsjpglist4.txt. Demo_Init's
+   FSOUND_Sample_Load opens the first MP3, the string at 0x004f3f9c,
+   with mode 0x130 [verified, 0x00447993].
+
+   The release does not contain all of them: textures/ holds R0, R1,
+   bg08, blob41b, bouno1, cloudt2, pattern5 and theloader, but no
+   caust*.jpg, and music/ holds only the soundtrack [verified,
+   directory listing]. So the other names are not on the running
+   path, or are built at run time.
+
+   meshes/ holds 77 files besides a Thumbs.db; the exe names 48 of
+   them [verified, strings against the listing]. On the running path
+   the parts load 32 .obj files, try1.sav and box.3ds, whose one
+   material is MARMARO.JPG, read from meshes/ [verified, the strings
+   in box.3ds]. The exe names gear, gears2 and sprite1..11 but sprite4
+   only in part_game::Init, which the release never builds
+   (subsystems/startup.txt 4); robota.obj and stadio1.obj have no
+   references, and FUN_004addf0, which also names sprite1.obj, has
+   none either [verified, cross-references]. The other 28 - all.obj,
+   city.obj, the heli variants, marmaro2.jpg, marmaro3.jpg, test.obj
+   and the like - the exe never names. textures/ and test_video2/ each
+   hold a Thumbs.db; test_video2/0000.png is never loaded
+   (effects/video.txt 1).
+
+7.  Status
+
+   +-------------------------------+----------------------------------+
+   | Area                          | Where                            |
+   +===============================+==================================+
+   | startup, setup dialog, window | subsystems/startup.txt           |
+   +-------------------------------+----------------------------------+
+   | the clock, music sync, the    | subsystems/clock.txt             |
+   | developer time jumps          |                                  |
+   +-------------------------------+----------------------------------+
+   | the relay and running order   | subsystems/parts.txt             |
+   +-------------------------------+----------------------------------+
+   | the developer camera rig      | subsystems/devcam.txt            |
+   +-------------------------------+----------------------------------+
+   | the shared look, part_motor   | effects/look.txt,                |
+   |                               | effects/motor.txt                |
+   +-------------------------------+----------------------------------+
+   | part_video, part_truck,       | effects/video.txt,               |
+   | part_rail, part_boat,         | effects/truck.txt,               |
+   | part_city, part_end           | effects/rail.txt,                |
+   |                               | effects/boat.txt,                |
+   |                               | effects/city.txt,                |
+   |                               | effects/end.txt                  |
+   +-------------------------------+----------------------------------+
+   | the end of the demo           | subsystems/clock.txt 3           |
+   +-------------------------------+----------------------------------+
+
+8.  Open questions
+
+   o Is part_game an interactive part? The g2x.mp3 and game_music2.mp3
+     names suggest it [guess]; it is built only when 0x0050bbdc is -1.
+   o Which published .3ds importer is statically linked, and which
+     version? Function ID or a source match would fence it off in one
+     step.

@@ -1,0 +1,30 @@
+/*
+ * The setup dialog, resource 0x65 of ASD-Rapture.exe as its .rsrc
+ * holds it: every position, style and string copied from the
+ * template (subsystems/startup.txt 2), but for one divergence:
+ * Antialiased (1011), which changed nothing, is replaced in its place
+ * by Muted (1015), ours, ticked to start the music muted.
+ * Setup_DialogProc in host_win32.cpp runs it. 1012 Windowed, 1013
+ * Force 16:9, 1014 the resolution list; the three -1 controls are
+ * group boxes.
+ */
+#include <windows.h>
+
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+
+101 DIALOGEX 300, 300, 179, 88
+STYLE 0x80C818C6
+EXSTYLE 0x90
+CAPTION "                       Rupture by ASD - 2009 "
+FONT 10, "Arial", 400, 0, 0
+BEGIN
+    CONTROL "Run ... ", 1, "Button", 0x50018001, 17, 61, 109, 21
+    CONTROL "Quit", 2, "Button", 0x50018000, 135, 61, 24, 21
+    CONTROL "Muted", 1015, "Button", 0x50011003, 18, 37, 42, 15
+    CONTROL "Windowed", 1012, "Button", 0x50011003, 68, 37, 42, 15
+    CONTROL "Force 16:9", 1013, "Button", 0x50011003, 117, 37, 42, 15
+    CONTROL "", 1014, "ComboBox", 0x50210003, 16, 12, 144, 108
+    CONTROL "Resolution", -1, "Button", 0x50000007, 2, 3, 174, 28
+    CONTROL "", -1, "Button", 0x50000007, 2, 29, 174, 26
+    CONTROL "", -1, "Button", 0x50000007, 2, 53, 174, 34
+END

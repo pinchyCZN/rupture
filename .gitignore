@@ -1,0 +1,99 @@
+# PCDEMOS/rupture - what does not belong in the repository
+#
+# Two different reasons live in this file and they are not the same
+# weight. The first block is a LEGAL boundary; the rest is housekeeping.
+
+# ---------------------------------------------------------------------
+# The 2009 release itself. NOT REDISTRIBUTED.
+#
+# CLAUDE.md's legal note: the original executable and its data are not
+# redistributed. Notes and reconstructed source are our own work
+# product and those ARE committed.
+#
+#   reverse/ghidra/      the executable, its DLLs and its data folders
+#   reverse/extracted/   anything carved out of them
+#   reverse/patched/     derived copies of the originals
+# ---------------------------------------------------------------------
+reverse/ghidra/
+reverse/extracted/
+reverse/patched/
+
+# Release files copied into src/ for the build: the demo's meshes,
+# textures, music and video frames. Copy them from the release; the
+# post-build steps put them beside the executables. src/video/ is made
+# from test_video2/ by tools/video_encode.py. src/cgeffects/ is
+# optional: the demo's Cg sources, to read the GLSL transcriptions
+# against; no build reads it.
+src/cgeffects/
+src/meshes/
+src/textures/
+src/test_video2/
+src/music/
+src/video/
+
+# ---------------------------------------------------------------------
+# The Ghidra project database.
+#
+# Covered by reverse/ghidra/ above; repeated by pattern so a moved
+# project stays ignored. The database is NOT disposable - it holds
+# every name, type and comment this project produces (CLAUDE.md rule
+# 6.4) - it is excluded because it is large and binary.
+# reverse/exports/ is the committed, diffable projection of it.
+# ---------------------------------------------------------------------
+*.gpr
+*.rep/
+*.lock
+*.lock~
+
+# ---------------------------------------------------------------------
+# The MCP server list names one machine's layout. .mcp.json.example is
+# the tracked copy. NO PORT IS PINNED IN EITHER - CLAUDE.md 2.1.
+# ---------------------------------------------------------------------
+.mcp.json
+
+# ---------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ---------------------------------------------------------------------
+# Local tool state and scratch. Rule 14 puts scratch in %TEMP%; these
+# are a backstop for the times that slips.
+# ---------------------------------------------------------------------
+.claude/settings.local.json
+*.png
+*.ppm
+*.bin
+*.dmp
+
+# ---------------------------------------------------------------------
+# Editor and OS droppings
+# ---------------------------------------------------------------------
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------
+# C build output. src/ is tracked; nothing a compiler makes from it is.
+# The .sln and .vcxproj, once they exist, are HAND WRITTEN and tracked.
+# ---------------------------------------------------------------------
+build/
+out/
+*.obj
+*.exe
+# The exports folder is named after the program, so *.exe catches it.
+!reverse/exports/*.exe/
+*.pdb
+*.ilk
+*.lib
+*.suo
+*.user
+.vs/
+
+# The journey has a home so it stops leaking into docs/ - rule 10.2.
+notes/

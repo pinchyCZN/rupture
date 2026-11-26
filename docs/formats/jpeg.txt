@@ -1,0 +1,99 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                       THE JPEG TEXTURES AND DECODER
+
+
+Abstract
+
+   The demo's JPEG textures are decoded by a copy of Rich Geldreich's
+   jpgd linked into the exe, run with its MMX IDCT: libjpeg's fast
+   integer IDCT kept in 16 bits, fed a quantisation table pre-scaled
+   by libjpeg's aanscales. The port decodes them with the current jpgd
+   with that one IDCT and that table scaling put back, and its
+   textures are byte-identical to the demo's.
+
+Table of Contents
+
+   1. The files
+   2. The decoder in the exe
+   3. The MMX path
+   4. The port's decode
+   5. Open questions
+
+1.  The files
+
+   +----------------------+---------+-------------+-------------+
+   | File                 | Size    | Chroma      | Coding      |
+   +======================+=========+=============+=============+
+   | textures/bg08.jpg    | 512x512 | full (1x1)  | baseline    |
+   | textures/pattern5.jpg| 64x64   | full (1x1)  | baseline    |
+   | textures/cloudt2.jpg | 128x128 | full (1x1)  | baseline    |
+   | textures/blob41b.jpg | 32x32   | 4:2:0 (2x2) | progressive |
+   | meshes/marmaro.jpg   | 16x16   | 4:2:0 (2x2) | baseline    |
+   +----------------------+---------+-------------+-------------+
+
+   These are the five the parts transcribed so far load [verified,
+   the SOF headers].
+
+2.  The decoder in the exe
+
+   RTTI names jpeg_decoder_stream and jpeg_decoder_file_stream with no
+   namespace [verified]. maybe_Tex_Load (0x00462450) builds a
+   0xe66c-byte decoder with maybe_jpgd_jpeg_decoder_ctor(stream,
+   use_mmx = 1), calls maybe_jpgd_begin_decoding and pulls RGBA
+   scanlines with maybe_jpgd_decode, then uploads RGB [verified].
+
+   It is jpgd, older than jpeg-compressor's first jpgd (v1.03, 2011),
+   which put the classes in a jpgd namespace and added a
+   frequency-domain chroma upsampler the exe does not have [verified,
+   no multiply by that upsampler's constants anywhere in the exe]. Its
+   colour tables (jpgd_create_look_ups) and box converters
+   (jpgd_H1V1Convert, jpgd_H2V2Convert and the H2V1 and H1V2 pair)
+   give the same results as every jpgd in that repository with box
+   chroma filtering [verified, compared function by function]. Its
+   m_crr step is 91882 where jpgd's FIX(1.40200f) is 91881; the two
+   give identical tables [verified, all 256 entries].
+
+3.  The MMX path
+
+   maybe_jpgd_init sets this+0xe61d to use_mmx && the CPUID test
+   maybe_jpgd_detect_mmx, so on any MMX CPU it is set [verified].
+   With it set:
+
+   o read_dqt (0x0041dd00) stores each quantisation value at its
+     natural position as (int16)((aanscales[pos] q + 0x800) >> 12),
+     with libjpeg's aanscales at 0x0050b980 [verified].
+   o The decode keeps the coefficients undequantised [verified,
+     0x0041eaa0].
+   o maybe_jpgd_transform_mcu runs every block through jpgd_idct_mmx
+     (0x0041b400): pmullw of coefficient by table, then libjpeg's
+     jidctfst column and row passes with every sum wrapping in 16 bits,
+     each multiply the high half of (x << 2) times 23170, -12540,
+     30273 or -30353, and the output (v >> 5) + 128 saturated
+     [verified].
+
+   jpgd_idct (0x0041af00), libjpeg's slow integer IDCT, is the path
+   for a CPU without MMX and is not taken. The two round differently:
+   jpgd's slow-integer decode of the five files differs from the
+   demo's textures by up to 8 per channel [observed, TEXDUMP].
+
+4.  The port's decode
+
+   core/file.cpp decodes every .jpg with the current jpgd
+   (src/third_party/jpgd, jpeg-compressor 92cb853) with SIMD off and
+   box chroma filtering. That copy is changed in two places, marked
+   RUPTURE: read_dqt_marker stores Jpeg_QuantMmx's scaled value and
+   idct() calls Jpeg_IdctMmx, both in core/jpeg.cpp. jpgd's own
+   dequantise, (int16)(s q), is the pmullw. Jpeg_IdctMmx matches the
+   exe's listing, run instruction by instruction, on 1903 test blocks
+   [verified]. All five textures are byte-identical to the demo's,
+   alpha included [observed, TEXDUMP of both programs].
+
+   jpgd is C++11, so the web build compiles it on a line of its own.
+
+5.  Open questions
+
+   o Whether the unread decode functions that test this+0xe61d
+     (0x0041c210, 0x0041ed20) differ from jpgd's in a way these five
+     files do not exercise.

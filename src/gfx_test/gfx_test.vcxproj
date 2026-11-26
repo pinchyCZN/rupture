@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- gfx_test: the look of RUPTURE on one mesh at a time, on the rupture
+       core. The web build is tools/build_web.sh gfx_test. The release files
+       it reads (src\meshes, src\textures) are not committed; the post-build
+       step copies them, and the GLSL transcriptions, beside the exe. -->
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>15.0</VCProjectVersion>
+    <ProjectGuid>{2B6E9D14-7F3A-4C82-B5E1-09A4D3C6F758}</ProjectGuid>
+    <RootNamespace>gfx_test</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.17134.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>v141</PlatformToolset>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration">
+    <UseDebugLibraries>true</UseDebugLibraries>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration">
+    <UseDebugLibraries>false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)..\..\build\gfx_test\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\..\build\obj\gfx_test\$(Configuration)\</IntDir>
+    <TargetName>gfx_test</TargetName>
+    <LocalDebuggerWorkingDirectory>$(OutDir)</LocalDebuggerWorkingDirectory>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <PreprocessorDefinitions>WIN32;_WINDOWS;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <AdditionalDependencies>opengl32.lib;ole32.lib;windowscodecs.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>xcopy /y /q /i "$(ProjectDir)..\rupture\shaders\*.*" "$(OutDir)shaders\" &gt; nul
+xcopy /y /q /i "$(ProjectDir)..\meshes\motorcycle.obj" "$(OutDir)meshes\" &gt; nul
+xcopy /y /q /i "$(ProjectDir)..\meshes\walls.obj" "$(OutDir)meshes\" &gt; nul
+xcopy /y /q /i "$(ProjectDir)..\textures\bg08.jpg" "$(OutDir)textures\" &gt; nul
+if exist "$(ProjectDir)..\video\test_video2.mpg" xcopy /y /q /i "$(ProjectDir)..\video\test_video2.mpg" "$(OutDir)video\" &gt; nul</Command>
+      <Message>Copying the GLSL transcriptions, meshes, textures and the video beside gfx_test.exe</Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
+    <ClCompile>
+      <Optimization>MaxSpeed</Optimization>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+    </Link>
+  </ItemDefinitionGroup>
+
+  <ItemGroup>
+    <ClCompile Include="gfx_test.cpp" />
+    <ClCompile Include="..\rupture\core\glapi.cpp" />
+    <ClCompile Include="..\rupture\core\gl1.cpp" />
+    <ClCompile Include="..\rupture\core\file.cpp" />
+    <ClCompile Include="..\rupture\core\shader.cpp" />
+    <ClCompile Include="..\rupture\core\obj.cpp" />
+    <ClCompile Include="..\rupture\core\track.cpp" />
+    <ClCompile Include="..\rupture\core\shard.cpp" />
+    <ClCompile Include="..\rupture\core\post.cpp" />
+    <ClCompile Include="..\rupture\core\jpeg.cpp" />
+    <ClCompile Include="..\rupture\core\video.cpp" />
+    <ClCompile Include="..\third_party\jpgd\jpgd.cpp">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <PreprocessorDefinitions>JPGD_USE_SSE2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="..\third_party\pl_mpeg\pl_mpeg.c">
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+    </ClCompile>
+    <ClCompile Include="..\rupture\host\host_win32.cpp" />
+  </ItemGroup>
+
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

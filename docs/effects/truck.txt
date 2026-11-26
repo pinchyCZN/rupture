@@ -1,0 +1,179 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                       PART_TRUCK: THE TRUCK AND THE TUNNEL
+
+
+Abstract
+
+   part_truck is slot 2 of the relay. The motorcycle rides on through a
+   canyon of broken buildings, overtakes an articulated truck, and the
+   camera ends at a tunnel mouth where the truck is cut into shards. It
+   runs from t = -8 to t = 66 on its own clock, which is held back near
+   the end, then hands over to part_rail.
+
+Table of Contents
+
+   1. What it draws
+   2. Init
+   3. Frame
+      3.1. The clock
+      3.2. The cameras
+      3.3. The shake
+   4. DrawScene
+      4.1. The sky and the lamp flag
+      4.2. The road and the rails
+      4.3. The truck and its shards
+      4.4. The rest
+   5. Tables and constants
+   6. Reconstruction notes
+   7. Open questions
+
+1.  What it draws
+
+   The road (part_motor's, drawn deeper), the motorcycle until t = 17,
+   meshes/truck.obj until t = 59, then truck_empty2.obj's groups and the
+   truckdestruction.obj shards flying apart; a cross track and two
+   railway tracks from t = 50.4, trainlong.obj, boat.obj, the truck's
+   lights, hex2/hex3 cells, a sign and a tholos [verified, the meshes
+   each section draws]. It looks like a night road through a canyon
+   ending in a tunnel [observed, the original at t = 0..64 in steps of
+   8, the shim's fixed-step mode].
+
+2.  Init
+
+   part_truck::Init (0x004aa5e0) is part_motor::Init's shape: the same
+   render targets under the same relayMode gate, four textures
+   (pattern5, cloudt2, blob41b through maybe_Tex_LoadWithAlpha, bg08),
+   twelve meshes into fixed display lists, box.3ds with the
+   projection_anisotropic pair through maybe_Shader_LoadPairWithModel,
+   twelve shader pairs and the six post passes, meshes/try1.sav, and
+   both clocks at -8 [verified]. The pair and file of every slot are
+   in its plate comment.
+
+   truckdestruction.obj is cut into shards by Obj_MakeShards(1.0) with
+   no srand of its own, so the stream is whatever the render targets'
+   noise left. Each shard then takes six Math_Random draws:
+
+    a  = 6 r1^3
+    v  = (0, 8 r3 - 3, -(8 r2 + 3a))
+    a' = (9 r6, 0 (2 r5 - 1), 8 r4 - 4) * a * 1.6 * 0
+
+   so the acceleration is all (signed) zeros, and Obj_BakeShards(8, 20)
+   records the flight [verified]. Seven straight tracks are built: the
+   road this+0x1378, 1680 points along +x from (-99, -50, 0); the cross
+   track this+0x13d8, 950 points stepping -0.7 in z from (0, -50, 450);
+   and five rails this+0x1438 (stride 0x60), 650 points stepping +0.7
+   in z from (0, -50, 0) with the step turned in yaw by (j - 2) 0.003
+   rad after each add, through Vec4_RotateEuler [verified].
+
+3.  Frame
+
+   3.1.  The clock
+
+   part_truck::Frame (0x004ab200) gates on started[2]/done[2]. tLocal
+   (this+0x318) gains the frame delta and is held at -8 at least; the
+   part clock t (this+0x310) is tLocal + g_partTimeCarry, less 2 once
+   tLocal reaches 63 and less 4 once it reaches 65 [verified]. So t
+   pauses twice near the end: in the original, t = 56 to 64 took 12
+   seconds of demo clock [observed]. nearZ is 0.05, + 2.1 for
+   59 <= t < 63, + 0.5 for t < 63; farZ 550. At t = 66 the overshoot
+   goes to g_partTimeCarry and part_rail starts; partEnd is t alone,
+   without the carry part_motor adds [verified].
+
+   3.2.  The cameras
+
+   One unconditional camera, then fifteen windows. Their conditions
+   test tLocal + carry, not t, and their bodies read tLocal; u = 27 t.
+   From the eleventh window (T >= 56) the eye sits at fixed world
+   positions near x = 1390 - the tunnel - instead of following u
+   [verified]. The expressions are in the source and Frame's plate.
+
+   3.3.  The shake
+
+   As part_motor's, but the path index is trunc(35 t) mod (n - 1) with
+   no +300000 offset (trunc(35 t + 245) for 25 <= t < 46), and the
+   amplitude A and frequency B come from a chain of time-gated
+   overrides, modulated by sin(pi clamp((t - 8.5) 0.7)). bend3's alpha
+   is the constant 0.2, and RightV and UpV are the shake's x and y
+   times -1.1 A 0.01, scaled up near the end [verified]. The composite
+   draws the scene image in white: there is no fade.
+
+4.  DrawScene
+
+   4.1.  The sky and the lamp flag
+
+   part_truck::DrawScene (0x004a2d00) seeds 0xdc072526, then sets the
+   byte this+0x2c0 - the truck's lamps - from maybe_Math_Flicker, a
+   noisy step that ends on: 1 - (1 - (x - h))^2 with h a sign test of
+   sin(24.4 x^2 + C), compared with 0.5 at t - 6, t - 13 and 2 (t - 58)
+   [verified]. The stars are motor_sky's loop under another seed; the
+   sun and three glows are drawn always, the glows pushed along z
+   [verified].
+
+   4.2.  The road and the rails
+
+   The road is maybe_Track_DrawRoadDepth on this+0x1378: part_motor's
+   road with the side strips dropped by 1.5 depth, depth = 1 before
+   t = 28 and 100 - 95 clamp((t - 31) 0.5) + 95 clamp(t - 46) after;
+   it is not drawn for 36 <= t < 39.3 and 43 <= t < 46.6, with the pair
+   switched to f_bridge after t = 28 [verified]. From t = 53 the cross
+   track and from t = 50.4 two of the five rails are drawn with
+   maybe_Track_DrawRails: two rail tops, walls, and sleeper boxes every
+   fourth point [verified].
+
+   4.3.  The truck and its shards
+
+   Before t = 59 truck.obj is placed on the road track with a jolt on
+   every third 30 Hz frame; from t = 59 truck_empty2.obj's two groups,
+   and the truckdestruction shards, each seeked by its distance from
+   (-14, 3.1, -1.32) and t and drawn as four triangles in a grey of its
+   own [verified, 0x004a446d..0x004a6ec4].
+
+   4.4.  The rest
+
+   The motorcycle and the sparks are part_motor's, before t = 17. Then
+   trainlong after t = 53, boat.obj after t = 60.5, the truck lights
+   when the lamp flag is set, the hex2 grid reseeded per column, hex3
+   ring pieces, the sign, two tholos groups, an additive headlight glow
+   with a 30-quad trail after t = 61.4, and from tLocal 63 four bursts
+   of 450 points seeded 0xdc05549f. The last glPopMatrix balances the
+   push made after the sky [verified].
+
+5.  Tables and constants
+
+   +-------------+-----------+----------+--------------------------------+
+   | Value       | Where     | Evidence | What                           |
+   +=============+===========+==========+================================+
+   | -8          | 004f4718  | verified | start of t and tLocal          |
+   +-------------+-----------+----------+--------------------------------+
+   | 66          | 004f6520  | verified | hand-over to part_rail         |
+   +-------------+-----------+----------+--------------------------------+
+   | 63, 65      | 004f6570, | verified | tLocal at which t is held back |
+   |             | 004f4938  |          | by 2, then 4                   |
+   +-------------+-----------+----------+--------------------------------+
+   | 27          | 004f4ef8  | verified | u = 27 t, in Frame and         |
+   |             |           |          | DrawScene                      |
+   +-------------+-----------+----------+--------------------------------+
+   | 0xdc072526  | 004a2d0f  | verified | DrawScene's first seed         |
+   +-------------+-----------+----------+--------------------------------+
+
+6.  Reconstruction notes
+
+   src/rupture/demo/part_truck.cpp holds the constructor, Frame and
+   Init; part_truck_draw.cpp DrawScene and its helpers. The helpers
+   part_motor and part_truck share live in scene.cpp.
+
+   The port matches the original at every 6 s checkpoint from t = -6
+   to the part's end at the 800x450 view, to a mean of 0.14 per 8-bit
+   channel or less [observed, the agent pipe on both].
+
+7.  Open questions
+
+   o What this+0x1320, this+0x1324 (0x70) and this+0x1330 (6) are, and
+     the five slots Init sets and loads nothing into.
+   o The 8th argument maybe_Scene_DrawLit gets here, the double at
+     ctx+0x19a0, where part_motor passes 0; the transcription of
+     maybe_Scene_DrawLit does not read it.
+   o Why three Obj_Mesh members (this+0x194, 0x3b0, 0x12e0) are built
+     and never loaded.

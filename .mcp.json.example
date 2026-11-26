@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "Copy to .mcp.json and replace every <...> with a real path.",
+    ".mcp.json itself is gitignored: it names one machine's layout,",
+    "and the bridge lives outside this repository.",
+    "",
+    "ghidra     the bridge to a running Ghidra. Several Ghidra projects",
+    "           can share a machine and A PORT DOES NOT IDENTIFY ONE, so",
+    "           GHIDRA_MCP_URL is deliberately NOT set - a write against",
+    "           another project's database corrupts it. tools/gq.py finds",
+    "           the server by project name and refuses any but rupture.",
+    "           CLAUDE.md 2.1.",
+    "",
+    "           The same bridge carries the debugger_* tools. They proxy",
+    "           to the pybag/dbgeng server in n:/DEV/xbdbg on",
+    "           GHIDRA_DEBUGGER_URL and are inert unless it is running.",
+    "           There is no second MCP server for it. CLAUDE.md 11.1."
+  ],
+  "mcpServers": {
+    "ghidra": {
+      "type": "stdio",
+      "command": "<path to python.exe>",
+      "args": [
+        "<path to bridge_mcp_ghidra.py>"
+      ],
+      "env": {
+        "GHIDRA_MCP_REQUIRE_PROGRAM_SELECTORS": "all",
+        "GHIDRA_DEBUGGER_URL": "http://127.0.0.1:8099"
+      }
+    }
+  }
+}

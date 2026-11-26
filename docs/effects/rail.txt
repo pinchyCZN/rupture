@@ -1,0 +1,122 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                         PART_RAIL: THE TRAIN
+
+
+Abstract
+
+   part_rail is slot 3 of the relay. A train runs along a track in open
+   space: first close beside it, then through a passage of reaching
+   hands, an engine of turning cylinders and a figure, then a long shot
+   of the train on its rails. It runs from t = 0 to t = 65 on its own
+   clock and hands over to part_boat.
+
+Table of Contents
+
+   1. What it draws
+   2. Init
+   3. Frame
+      3.1. The clock
+      3.2. The cameras
+      3.3. The shake
+   4. DrawScene
+   5. Reconstruction notes
+   6. Open questions
+
+1.  What it draws
+
+   meshes/trainlong.obj as three display lists, one placed per car;
+   boat.obj; the bridge and rails along one long track and five rail
+   tracks, drawn by maybe_Track_DrawRailsAlt; hand.obj for
+   24 < t < 28.2; cylinders.obj as the "engine" for 11 < t < 24; and
+   human.obj for 40 <= t < 58 [verified, the meshes each section
+   draws]. It looks like a night train in open space [observed, the
+   original every 6 s of its clock, the shim's fixed-step mode].
+
+2.  Init
+
+   part_rail::Init (0x0049cb50) is part_truck::Init's shape in the slot
+   band 3000: the same render targets under the same gate, the same
+   four textures, box.3ds with the projection_anisotropic pair, five
+   pairs (v_roadcut3 with f_bridge2, f_hand, f_head and f_engine;
+   vertex_train with fragment_trainold2) and the six post passes
+   [verified]. It loads hand, boat (into g_boatObj), trainlong,
+   cylinders and human, and compiles cylinders' groups 0..5 into
+   display lists 1000..1005 and trainlong's groups 0..2 into
+   2000..2002, which DrawScene calls by those ids [verified]. One track
+   at this+0x1460 has 2950 points from (0, -50, 850) stepping -0.7 in
+   z; five rails at this+0x14c0 are part_truck's, the Euler turn's
+   first angle -0.001 [verified]. No shards and no rand. Both clocks
+   start at 0.
+
+3.  Frame
+
+   3.1.  The clock
+
+   part_rail::Frame (0x0049d280) gates on started[3]/done[3]. tLocal
+   (this+0x320) gains the frame delta, held at 0 at least, and t
+   (this+0x318) is tLocal + g_partTimeCarry, with no hold-backs. nearZ
+   is 0.45, farZ 550. At t = 65 the overshoot goes to g_partTimeCarry
+   and part_boat starts; partEnd is t [verified; observed, the original
+   ends the part at t = 64.99].
+
+   3.2.  The cameras
+
+   Two base cameras, then twelve windows, all tested on t: -10..6,
+   6..11, 11..20, 20..24, 24..38, 38..40, 40..42, 42..44, 44..51,
+   51..54, 54..58 and 58..158. Only 24..38 blends with Camera_Lerp,
+   toward a second camera at clamp((t - 31) 0.28), as part_video's does
+   [verified]. The expressions are in the source.
+
+   3.3.  The shake
+
+   As part_truck's: index trunc(35 t) mod n, plus 280 from t = 51 and
+   plus 490 for 24 <= t < 38. RightV and UpV are doubled for
+   28 < t < 42 and scaled by 2.2 from t = 51; bend3's alpha is 0.2
+   [verified].
+
+4.  DrawScene
+
+   part_rail::DrawScene (0x00497100) is part_truck's in outline: the
+   stars under srand(0xdc072526), each also following eye.z; the sun
+   and glows anchored by the eye and moved at t = 51; the pass set-up;
+   then the lit sections. The train cars from display lists 2000..2002
+   and boat.obj, skipped for 24 < t < 31; the bridge and rails with
+   maybe_Track_DrawRailsAlt, turned 188 or 202 degrees for their second
+   draw; the hands; the engine from lists 1000..1005 in two passes; the
+   figure; a glow trail as part_truck's with its own fade; and two sets
+   of 1000 additive line streaks under srand(0x9600b3bf). The last
+   glPopMatrix balances the push after the sky [verified].
+
+   Several values cross DrawScene's sections through its stack frame:
+   the train loop's per-car accumulators feed the bridge's "fireplace"
+   uniform, and the glow block's Q, H and Z0 feed the streaks; the
+   transcription keeps them as one set of locals [verified, the stack
+   offsets at each access].
+
+5.  Reconstruction notes
+
+   src/rupture/demo/part_rail.cpp holds the constructor, Frame and
+   Init; part_rail_draw.cpp DrawScene and maybe_Track_DrawRailsAlt.
+
+   The port matches the original at every 6 s checkpoint at the
+   800x450 view, to a mean of 0.25 per channel or less, except the
+   engine, 19 < t < 24, at 3.7 [observed]. The engine's colour image
+   matches; its normal image differs on some pistons, where lists
+   1001 and 1000 draw near-coplanar faces at the same place and the
+   inner one shows through [observed, the target 0 textures with the
+   post passes skipped for a frame]. The 32-bit depth buffer
+   (effects/look.txt 1) settles most of them; which face wins on the
+   rest turns on the float rounding of the matrices, which the
+   driver computes in the original and core/gl1 in the port
+   [inferred].
+
+6.  Open questions
+
+   o Whether the engine's remaining piston z-fighting, 19 < t < 24,
+     can be matched (section 5).
+   o What this+0x13a8, this+0x13ac (0x70) and this+0x13b8 (6) are, the
+     container at this+0x630, and the slot ids Init sets and loads
+     nothing into.
+   o The global 0x00b1e558, written in DrawScene and never read.

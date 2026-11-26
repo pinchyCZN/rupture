@@ -1,0 +1,168 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                         PART_BOAT: THE BOAT
+
+
+Abstract
+
+   part_boat is slot 4 of the relay. A boat with a flashing light runs
+   over a field of hexagonal tiles, past a train on a long bridge; a
+   wreck of train cars breaks up round the camera; then a train car
+   rises out of a column of light and the camera climbs away. It runs
+   from t = -7 to t = 54 on its own clock and hands over to part_city.
+
+Table of Contents
+
+   1. What it draws
+   2. Init
+   3. Frame
+      3.1. The clock
+      3.2. The cameras
+      3.3. The shake and the light camera
+   4. DrawScene
+      4.1. The first half
+      4.2. The second half
+   5. The blob texture
+   6. Reconstruction notes
+   7. Open questions
+
+1.  What it draws
+
+   meshes/hex.obj as a grid of tiles, boat.obj, trainlong.obj whole and
+   as the three display lists of its groups, cylinders.obj's groups as
+   lists 1000..1004 for the wreck, and one 600-point track drawn by
+   maybe_Track_DrawRails2 [verified, the meshes each section draws].
+   It looks like a boat crossing a sea of hexagons at night, with a sun,
+   stars, and from t = 44 a rising column of light [observed, the
+   original every 6 s of its clock, the shim's fixed-step mode].
+
+2.  Init
+
+   part_boat::Init (0x0046f920) is part_rail::Init's shape in the slot
+   band 4000: the render targets under the same gate, the four textures
+   (blob41b through Tex_LoadWithAlpha, section 5), box.3ds with the
+   vertex/fragment_projection_anisotropic_hex pair, and five pairs:
+
+    +0x1208  vertex_boat                    fragment_boat
+    +0x120c  vertex_boat                    fragment_boat2
+    +0x1210  vertex_boat                    fragment_train2
+    +0x218   vertex_projection_anisotropic  fragment_projection_anisotropic_hex2
+    +0x200   v_roadcut3                     f_bridge23
+
+   plus the post passes [verified]. It loads hex.obj, its own boat.obj
+   (not g_boatObj), trainlong.obj and cylinders.obj, compiles
+   cylinders' groups 0..4 into lists 1000..1004, builds one track at
+   this+0x198 of 600 points stepping (0, 0, +1), and loads try1.sav.
+   Both clocks start at -7.0 (0x004f4740). No rand.
+
+3.  Frame
+
+   3.1.  The clock
+
+   part_boat::Frame (0x0046fe00) gates on started[4]/done[4]. t
+   (this+0x2d8) is tLocal (this+0x2e0) + g_partTimeCarry, held at -7
+   at least. nearZ is 0.5, 0.005 from t = 46, plus 0.2; farZ 460, 160
+   from t = 8. At t = 54 the overshoot goes to g_partTimeCarry and
+   part_city starts [verified; observed, the original ends the part at
+   t = 53.993, clock 306.03].
+
+   maybe_Seq_Copy copies the whole sequence record into this+0x3f0
+   before Frame rewrites seq->partClock, so this+0xca8, which DrawScene
+   reads, is the previous frame's partClock [verified, a live read and
+   hooks on Frame and DrawScene].
+
+   3.2.  The cameras
+
+   Two base cameras from the seq head, then ten windows tested on t:
+   below 8, 8..12 and 12..18 set the eye directly; 18..22, 22..28,
+   28..33, 33..44, 44..46, 46..49 and 49..146 build a camera with
+   Camera_Init and copy it in with Camera_Lerp at f = 1. The last four
+   run Camera_Init twice and the first result is unused [verified].
+   The expressions are in the source.
+
+   3.3.  The shake and the light camera
+
+   part_rail's shake: the path index trunc(35 t) mod n, plus 1020 below
+   t = 0, with depth 0.008 Clamp01(t) and 0.8 below t = 8 and 0.002 and
+   0.5 from it. The light camera is written field by field: eye
+   (0, 20, 10 t), target (0, 0, 10 t), up (1, 0, 0) [verified].
+
+   Then DrawScene, part_rail's post chain with bend3's alpha
+   (1 - Ease(Clamp01((t + 7) 0.4))) 0.6 + 0.2, and the composite, faded
+   in over t = -7..-6 and out over 53..54. Unlike part_rail there is no
+   GL_TEXTURE matrix step [verified].
+
+4.  DrawScene
+
+   part_boat::DrawScene (0x0046b690) does not read its pass argument.
+   Its lit sections are not Scene_Lit: there is no push and pop round
+   maybe_Scene_DrawLit, and each also writes ctx+0x1918 (0),
+   ctx+0x1920 (1, 0.2, -0.3, 1) and ctx+0x1930 (1, 1, 1, 1) [verified].
+   No value crosses from the first half to the second through the
+   stack frame [verified, every slot].
+
+   4.1.  The first half
+
+   An eased field-of-view pull of -24 and two windows on this+0xca8;
+   the uniforms planecut, Reduction, sides, ttime and blue; then the
+   hex pair draws a grid of hex.obj tiles up to 42 x 60. The vertex
+   program sinks vertices below y = 25 within 10 units of (0, 430) by
+   the cube of the distance times Reduction.x. A tile nearer the eye
+   than 1.68 skips its glPopMatrix, so the modelview push leaks
+   [verified]. The hex2 pair sets sides = 2000. Then a blue haze quad
+   from t = 42, part_truck's sun and two glows anchored at eye +
+   (20, 30, -150) and moved at t = 33, and from t = 44 500 additive
+   points rising round (0, y, 430) under srand(0xa567).
+
+   4.2.  The second half
+
+   Four lit sections, planecut 20:
+
+    +0x1208  always         boat.obj
+    +0x120c  28 <= t < 33   trainlong's groups, then 56 and 20 pieces
+                            from lists 1002..1004 under srand(0xe0ae70f8)
+                            and srand(0x287547f)
+    +0x1210  t < 3.5        trainlong.obj whole
+    +0x200   t < 4.2        the track, maybe_Track_DrawRails2 at 0.7
+
+   Then two flashing blob41b quads over the boat, blue and red in
+   antiphase at sin(8 t), fading in from t = 3; 2500 stars below
+   t = 49 under a fixed 65 / 1 / 1000 projection with depth testing
+   on; the same flares again with constant colours under that
+   projection; and for 24 < t < 33 up to 2500 grey dust points round
+   the eye. The modelview push before the first flares is never
+   popped, and the last glPopMatrix runs in GL_PROJECTION mode
+   [verified].
+
+   maybe_Track_DrawRails2 (0x00469930) is an instruction-for-instruction
+   copy of maybe_Track_DrawRails (0x0049f9b0) [verified].
+
+5.  The blob texture
+
+   Every part loads textures/blob41b.jpg into texBase+0x14 through
+   Tex_LoadWithAlpha (0x004647e0) with the same file for colour and
+   alpha: RGB from the colour file and alpha from the alpha file's
+   green channel. The row loop clamps its index to 1, so row 0 stays
+   zero and the bottom scanline's alpha lands in row 1 [verified].
+   The alpha matters wherever the blob is drawn with GL_SRC_ALPHA:
+   here the flares and the haze. With alpha 1 they draw visibly larger
+   and the haze washes the whole frame [observed].
+
+6.  Reconstruction notes
+
+   src/rupture/demo/part_boat.cpp holds the constructor, Frame and
+   Init; part_boat_draw.cpp DrawScene, one helper per section by
+   address range. maybe_Track_DrawRails2 is a wrapper over part_truck's
+   transcription. Compared with the original at matched t on the agent
+   pipe, with the port at the original's 800x450 view, it matches to a
+   mean of 1.1 per 8-bit channel or less [observed, every 6 s, and
+   every 0.5 s of 26..34]. Section 2's pieces are scaled by 1.09, so
+   the faces turned to the camera take vertex_boat's rim term below
+   0 and draw white-hot (effects/look.txt 2).
+
+7.  Open questions
+
+   o What this+0x11b8, this+0x11bc (0x70), this+0x11c8 and this+0x214
+     are, and the container at this+0x480.
+   o Who reads ctx+0x1918..0x193c.

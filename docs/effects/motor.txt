@@ -1,0 +1,558 @@
+PCDEMOS RUPTURE                                            Analysis Note
+
+
+                                 MOTOR
+
+
+Abstract
+
+   part_motor: a motorcycle in a room of hexagonal geometry, drawn
+   with the shading that gives RUPTURE its look - surfaces dark where
+   they face the camera and glowing where they turn edge-on - then
+   blurred and added back for glow. Frame 0x004938a0, Init
+   0x00493230. Meshes motorcycle.obj, room.obj, hex2.obj,
+   kthrio1.obj.
+
+Table of Contents
+
+   1. What it draws
+   2. The road blocks' shading
+      2.1. The rim term
+      2.2. The fragment program
+      2.3. What the blocks are fed
+      2.4. Where the blocks are
+   3. The motorcycle
+      3.1. The road track
+      3.2. The transform
+      3.3. v_motor and f_motor
+   4. The rest of DrawScene
+      4.1. The sky
+      4.2. The buildings
+      4.3. The road surface
+      4.4. The tile field
+      4.5. kthrio1
+      4.6. The sparks
+   5. Frame
+      5.1. The clock
+      5.2. The cameras
+      5.3. The shake and the light
+   6. The render passes
+   7. Tables and constants
+   8. Reconstruction notes
+   9. Open questions
+
+1.  What it draws
+
+   Init loads meshes/motorcycle.obj, meshes/room.obj, meshes/hex2.obj
+   and meshes/kthrio1.obj [verified]. Frame places a hand-keyed
+   camera through fourteen time windows (5.2). DrawScene draws a
+   starfield, the city of room.obj copies either side of a raised
+   road, the bouno1 tile field below, the motorcycle and its sparks
+   (4); Frame runs the shared post chain over it (6).
+
+2.  The road blocks' shading
+
+   The pair loaded into this+0x1180 [verified, part_motor::Init]:
+
+    cgeffects/vertex_boat_test2cut.cpp
+    cgeffects/fragment_boat_test2.cpp
+
+   shades ten copies of meshes/room.obj (this+0x194), laid end to end
+   down x as the road the camera flies along; their dissolving front
+   (2.2) is the red strip down its middle [verified, the Obj_Draw at
+   0x00491201 takes this+0x194, which Init loads from room.obj;
+   observed, 2.4]. The motorcycle (g_motorcycleObj) is a different
+   draw, the Obj_Draw at 0x004921fb, with the pair in this+0x11e8,
+   v_motor and f_motor [verified], section 3.
+
+   2.1.  The rim term
+
+   The vertex program computes, per vertex [verified, the file]:
+
+    V    = normalize(CameraPos - P)
+    m    = max(dot(N, V), 0)
+    mm   = pow(m, 15) * 2
+    m    = pow(1 - m, 5) + 0.5
+    mult = 1 / (1 + 0.0005 * |CameraPos - P|^2)
+
+    HCOL2 = diffuse * m  * mult * 0.65
+    HCOL  = diffuse * mm * mult * 3
+
+   with N and P transformed by ModelViewObject. m is a Fresnel
+   rim term: 0.5 where the surface faces the camera, rising to 1.5 as
+   it turns edge-on, so silhouettes come out up to three times
+   brighter than faces seen head-on. The crease lines are not this
+   term's work but the post chain's (effects/look.txt 3.2). HCOL is a
+   narrow head-on highlight. mult fades both with the square of
+   distance.
+
+   diffuse is the current glColor. part_motor::DrawScene draws the
+   blocks with glColor4f(0.2, 0.22, 0.2, 1) [verified, floats at
+   0x004f3754 and 0x004f5de8].
+
+   The vertex program also widens the mesh along z by up to 2 units,
+   driven by the uniform Reduction.x against the vertex's x
+   [verified]:
+
+    ffx = saturate(0.05 * (Reduction.x - x))
+    z  += (z > 0 ? 2 : -2) * ffx
+
+   Its earlier assignments to HCOL and HCOL2 are overwritten before
+   the return; only the last ones above take effect [verified].
+
+   2.2.  The fragment program
+
+   Two outputs [verified, the file]:
+
+    oColor1 = (N + 1) * 0.5                       COLOR0: the normal
+    oColor2 = HCOL2 * (1 + (0.2,0.6,1,1) * 4000
+                         * saturate(mul1^6 - 0.001))
+            + saturate(ffx - cond2) * 2 * (1,0.2,0.1,1)
+                                   * saturate(1 - diff)
+            + HCOL * 0.4                          COLOR1: the colour
+    oColor2.w = Ramp.x
+
+   mul1 is the product of two lookups into the decal texture at
+   world-space positions (xz and xy, scaled by 0.03): a procedural
+   mask that pushes a strong blue into the colour where it peaks.
+
+   Three discards cut the mesh [verified]:
+
+    cos(P0.y * 0.7) * cos(P0.z * 0.7) < -0.7      a regular lattice of
+                                                   holes, P0 = object
+                                                   space position
+    cond1 > 0.97                                   the noise mask plus
+                                                   alpha2 and height
+    y > -25, x < alphaplane2,
+    cond2 < 0.73 * ffx                             a dissolving front
+                                                   moving in x
+
+   2.3.  What the blocks are fed
+
+   Obj_Draw sets no texture and no sampler, and nothing in the loop
+   sets the
+   fragment program's decal. The sampler reads whatever is bound, and
+   at every motor Obj_Draw that was GL texture 853 on unit 0 - 512 x
+   512, internal format 3 - with units 1 to 3 empty [observed, the
+   shim agent at 76 s and 88 s]. Its pixels are textures/bg08.jpg, the
+   texture Init loads into this[0x2a0]+0xc at 0x0049346a [observed,
+   TEXDUMP against the file]. That decal is mul1's source, so bg08
+   drives the blue mask, cond1 and cond2. Which earlier draw leaves it
+   bound is open; maybe_Mesh_Draw is the only code that sets texture
+   parameters on scene programs [verified, cross-references to
+   cgGLSetTextureParameter].
+
+   The uniforms, all through Shader_SetParam3f and Shader_SetParam1f,
+   the only callers of cgGLSetParameter3f and 1f [verified]:
+
+    CameraPos    vertex   index 1   ctx+0x184c, the eye camera
+    LightPos     vertex   index 2   (0, 0, 30)
+    Reduction    vertex   index 4   (r, 0, 0), set per copy (2.4)
+    alpha2, ttime, alphaplane,
+    alphaplane2  fragment           set per copy (2.4)
+
+   LightPos is the light camera ctx+0x18a8: Frame copies a camera
+   into it and then writes its position as (0, 0, 30.0f), the float
+   at 0x004f47dc, before calling DrawScene [verified, 0x00494f87;
+   observed constant through the motor part]. In this pair it reaches
+   only assignments the program overwrites (2.1), so it does not
+   change the colour. maybe_Scene_DrawLit sets ModelViewProj from the
+   eye camera and ModelViewLightProj from the light camera
+   (translate and scale by 0.5, k_flt_0_5, then gluPerspective of
+   ctx+0x608e38 + 75 at aspect ctx+0x608e50, then its gluLookAt)
+   [verified]; the light projection reaches only the dead cll1 and
+   cll4 lookups.
+
+   Sampled values [observed, the shim agent; two to five frames per
+   sample, the first copy's]:
+
+   +-------+-------------+--------+-------+-------------+--------------+
+   | clock | alphaplane2 | alpha2 | ttime | Reduction.x | CameraPos    |
+   +=======+=============+========+=======+=============+==============+
+   | 70.0  | -74.1       | 0      | 0     | -79.2       | -164 -21 0   |
+   +-------+-------------+--------+-------+-------------+--------------+
+   | 78.2  | 147.0       | 0.073  | 1     | 141.8       | 106 62 2     |
+   +-------+-------------+--------+-------+-------------+--------------+
+   | 86.2  | 363.1       | 0.258  | 1     | 358.0       | 353 83 0     |
+   +-------+-------------+--------+-------+-------------+--------------+
+   | 94.1  | 576.3       | 0.835  | 1     | 571.1       | 532 7 -58    |
+   +-------+-------------+--------+-------+-------------+--------------+
+
+   alphaplane is 0 throughout. Reduction.x tracks alphaplane2 about 5
+   below it. The pair is not bound between about 33 and 62 seconds;
+   the room, hex and kthrio1 programs are.
+
+   2.4.  Where the blocks are
+
+   The loop runs while the part's clock t (this+0x210) is above -5
+   (k_dbl_m5) [verified, 0x00490e19 onward]. With L = 27 t and E the
+   eye camera's x (ctx+0x184c), plus 91 once t >= 9:
+
+    n = clamp(__ftol2(E / 24 + 0), 5, 15)
+    for i = n - 5 .. n + 4:
+      _srand(0x409bfa + i), then 100 Math_Random calls discarded
+      d     = L - 24 i
+      ttime = Math_Ease(clamp((10 + d + 20) * 0.015), 2)
+      turn  = Math_Ease(clamp((d + 100) * 0.015), 2)
+      lift  = clamp((d - 30 + 0) * 0.005)
+      GL_TEXTURE = translate(24 i, (i % 2) * 3 - 20.4, 0)
+                   rotate((Math_Random() * 40 - 20) * turn + 90, y)
+      alpha2      = Math_Random() * ttime
+      alphaplane  = (L - 150 - 4) * 0
+      alphaplane2 = L + 10 - 4
+      translate(0, lift * 0, 0)
+      Reduction   = (L + 10 - 10, 0, 0)
+
+   The constants are labelled at their addresses (k_dbl_27, k_dbl_24,
+   k_dbl_91, k_dbl_9, k_dbl_10, k_dbl_20, k_dbl_0_015, k_dbl_100,
+   k_dbl_30, k_dbl_0_005, k_dbl_150, k_dbl_4, k_dbl_20_4, k_dbl_40,
+   k_dbl_90, k_dbl_2, k_dbl_0); Math_Random is _rand() / 32767. The
+   multiplies by k_dbl_0 make alphaplane 0 and the lift nothing. The
+   GL_TEXTURE matrix becomes ModelViewObject, so each block's world
+   position is its translate [verified; observed, the shim agent's
+   mtex operands matched this to the last digit at 78.2 s, with
+   Math_Ease's inputs and outputs hooked].
+
+   One instant read from the demo, paused at clock 78.30 [observed,
+   the shim agent]:
+
+    t            5.247628168765237      part_motor this+0x210
+    eye          106.238144 62.026756 2.026756    ctx+0x184c
+    target       66.244392 -21.068668 -0.123311   ctx+0x185c
+    up           -0.102871 1 0                    ctx+0x186c
+    light cam    eye (0, 0, 30), target 0, up (0, 1, 0)
+    ctx+0x608e38 0 (fov offset), +0x608e40 0.35, +0x608e48 550,
+                 +0x608e50 1 (the light's aspect)
+    bend3        RightV 0.00701752452, UpV -0.0266499047
+
+   So DrawScene's projection is gluPerspective(65, the window's
+   aspect, 0.35, 550). At that instant n = 5 and the blocks stand 70
+   to 410 units from the eye, so mult runs from 0.29 down to 0.01;
+   across clock 68 to 96 the nearest block is 70 to 110 units away
+   [observed]. With mult = 1 / (1 + 0.0005 d^2) and Ramp = mult * 0.5,
+   and the edge pass multiplying its whole output by Ramp
+   (effects/look.txt 3.2), that distance sets the brightness of the
+   look as much as any colour does [inferred, the formulas].
+
+3.  The motorcycle
+
+   The bike is g_motorcycleObj (meshes/motorcycle.obj) drawn once
+   per frame with the pair in this+0x11e8, v_motor and f_motor. It
+   rides a track that Init builds, the same Track_Eval type the
+   shards replay (effects/video.txt 3.4).
+
+   3.1.  The road track
+
+   Init empties the track this+0x1188 with Track_Clear and pushes
+   1350 points onto it [verified, 0x00493554..0x004936df]. A point
+   starts at (-100, -50, 0); before each push its y is assigned and
+   (1, 0, 0) is added, so point i sits at x = i - 99:
+
+    i = 0 .. 749      y = Math_Ease(clamp(i / 250, 0, 1), 2) * 150 - 150
+    i = 750 .. 1349   j = i - 750
+                      y = (1 - Math_Ease(clamp(j / 250, 0, 1), 2)) * 50 - 50
+
+   Math_Ease(x, 2) runs 0 to 1, so the road climbs from -150 to 0
+   over its first 250 points, runs level to point 749, drops to -50
+   over the next 250 and is level after that. z is 0 throughout. The
+   second loop draws one Math_Random per point and drops it, which
+   moves the rand stream by 600 [verified].
+
+   3.2.  The transform
+
+   With t the part's clock this+0x210, DrawScene keeps
+   u = t * 27 [verified, k_dbl_27 at 0x00490872], less 3.2 around this
+   draw while t < 14. The bike is placed by [verified, 0x00491b00 ..
+   0x00492200]:
+
+    s  = max(u + 245 + 5, 5)
+    P  = Track_Eval(this+0x1188, (float)s)
+    Q  = Track_Eval(this+0x1188, (float)(s + 3))
+    D  = normalize(Q - P)
+    a  = Math_Ease(clamp((t + 9.4) * 0.3, 0, 1), 1)
+    b  = Math_Ease(clamp((t + 9.8) * 0.3, 0, 1), 1)
+    k  = clamp(sin(a * pi) * 1.4, 0, 1)
+    yaw = acos(dot(D, (1, 0, 0))) * -90
+
+    glMatrixMode(GL_TEXTURE); glLoadIdentity()
+    glTranslatef(P.x, P.y, P.z)
+    glTranslatef(-180, -20, 0)
+    t < -2:  glTranslatef(sin(b * pi) * 2.8 * 2, 0, 0)
+    glTranslatef(0, yaw * -4.2 * 0.01, 0)
+    t < -2:  glTranslatef(0, k * 1.664, 0)
+    t > 0:   glRotatef(sin(t * 2) * 20, 1, 0, 0)
+    glRotatef(90, 0, 1, 0)
+    glRotatef(yaw, 1, 0, 0)
+    t < -2:  glRotatef(k * -50, 1, 0, 0)
+    glScalef(1, 1, 1); glColor3f(0.3, 0.3, 0.3)
+    Shader_SetTextureMatrix(this+0x11e8, 0xe)
+    glMatrixMode(GL_MODELVIEW); Obj_Draw(g_motorcycleObj)
+
+   Before it: maybe_Scene_DrawLit with this pair, both programs bound,
+   GL_CULL_FACE on, _srand(0x409bfa), and alphaplane2 = u - 150 - 4
+   on the fragment program, which f_motor declares and never reads.
+   The code also forms R = (0, 1, 0) x D and R x D, normalises both,
+   and reads neither [verified].
+
+   The bike stands at s = 5 until u + 250 passes 5, at t = -8.96, and
+   then moves at 27 units a second. The eases a and b start at t =
+   -9.4 and -9.8 and reach 1 3.3 s later; sin(a pi) and sin(b pi)
+   rise and fall back to 0 over that time, so k raises the bike by up
+   to 1.664 and turns it about x by up to -50 degrees while b moves
+   it by up to 5.6 in x, all before t = -2 [inferred, the formulas].
+   On screen that should be a wheelie as it sets off [guess]. acos
+   discards the sign of the slope, so the bike pitches the same way
+   up the climb and down the drop, by 90 per radian rather than 57.3
+   [inferred].
+
+   3.3.  v_motor and f_motor
+
+   v_motor computes [verified, the file]:
+
+    P    = ModelViewObject * position          oThePos
+    N    = (float3x3)ModelViewObject * normal  oNormal
+    V    = normalize(CameraPos - P)
+    m    = max(dot(N, V), 0)
+    mm   = pow(m, 15) * 2
+    m    = pow(1 - m, 5) + 0.5
+    mult = 1 / (1 + 0.001 * |CameraPos - P|^2)
+
+    HCOL2 = diffuse * m  * mult * 0.5
+    HCOL  = diffuse * mm * mult
+    Ramp  = (1, 1, 1) * mult
+
+   The rim term of 2.1 with a falloff twice as steep and Ramp without
+   the halving. Its spherical-map, specular, diffuse and tangent-frame
+   work is overwritten or reaches no output f_motor reads.
+
+   f_motor [verified, the file]:
+
+    mul1    = tex2D(decal, oThePos.xz * 0.08).x
+            * tex2D(decal, oThePos.xy * 0.09).y
+    oColor1 = (oNormal.xyzz + 1) * 0.5                  COLOR0
+    oColor2 = HCOL2 * (0.2, 0.3, 0.4, 0.1) * 0.2
+            * (1 + (0.3, 0.3, 0.4, 1) * 100000 * Ramp.x
+                 * saturate(pow(mul1, 8)))              COLOR1
+    oColor2.w = Ramp.x
+
+   No discard is live and HCOL is unused. The body is dark, a fifth of
+   0.3 * m * mult tinted blue, and where mul1 approaches 1 the factor
+   100000 * mul1^8 throws it to white, a speckle fixed in world space
+   that the bike moves through [inferred]. Which texture is decal is
+   2.3's question: nothing in this draw binds one.
+
+4.  The rest of DrawScene
+
+   DrawScene's order [verified, 0x00490100..0x0049322d]: the sky into
+   the cleared target; the scene projection gluPerspective(65 +
+   ctx+0x608e38, aspect, near 0.35, far 550); the near buildings, the
+   road blocks (2), the far buildings, the road surface, the tile
+   field, the motorcycle (3), kthrio1 before t = -5, and the sparks.
+   Every pair is set up by the same bracket: profiles off, ctx+0x1bd8
+   = 0, maybe_Scene_DrawLit(model 1000, decal = texBase + 12 (bg08),
+   light = texture 0 (the normal target), the pair, the eye and light
+   cameras), ctx+0x1bd8 = 1, the pair bound. DrawScene keeps its own
+   u = 27 t (Frame's is 25 t), and a row count n = clamp(trunc(eye.x
+   / 24), 5, 15), from eye.x + 91 after t = 9. Each building or block
+   reseeds the C runtime's generator from its row index and draws 100
+   values before its own, so its look is fixed per index.
+
+   4.1.  The sky
+
+   gluPerspective(65, aspect, 1, 1000) and the eye camera, depth test
+   off, _srand(0x193cedbf), and 2500 GL_POINTS of grey 0.2 (r + 0.2)
+   on the upper half of a sphere of radius 400, its y made positive,
+   lowered by 160 and following the eye in x. Before t = 13 a blob41b
+   sun 35 across and two cloudt2 glows 110 across beside it, offset
+   in x by sin(0.8 t + 4k) * 11 + 30 k, all additive [verified,
+   0x00490100..0x004906e0].
+
+   4.2.  The buildings
+
+   room.obj again, with the pair this+0x11ec (fragment_boat_test3). The
+   near row: indices n - 4 (n - 5 for 9 <= t < 14) to n + 3, at
+   (24 i + 12, 3 (i % 2) - 20.4 - 10 r - 10, -30), turned three times
+   by (20 r - 10) Math_Ease(clamp((u - 24 i + 50) * 0.015), 2) degrees,
+   tinted (0.8, 0.9 + 0.1 r, 0.9 + 0.3 r). The far row, after t = -5:
+   indices n - 3 (n - 4) to n + 2 but every fifth, at z = +30, tinted
+   (0.8 + 0.2 r, 1, 1). Each sets alpha2 = r on the fragment program.
+   They tip into place as the road reaches them [verified,
+   0x004908eb..0x00490d7a, 0x0049122a..0x004915ba].
+
+   4.3.  The road surface
+
+   The pair this+0x1184 (v_roadcut, f_roadcut) under translate(-180,
+   -20.06, 0), colour (0.6, 0.8, 1), Reduction ((u - 30) - 10, 0, 0),
+   alphaplane2 u - 24, draws the road track with maybe_Track_DrawRoad:
+   a top quad strip 8 wide, two sides 1.5 deep and centre dashes, all
+   from the track's points with no smoothing beyond the 1-unit
+   spacing. It clears the track's loop byte, which the bike's
+   Track_Eval then sees [verified, 0x004915c0..0x0049184a,
+   0x0048ec00].
+
+   4.4.  The tile field
+
+   After t = -8.5, the pair this+0x11f8 (fragment_boat_testhex) draws
+   textures/bouno1.png, a 70 x 70 image read as 8-bit grey, as a field
+   of separate square tiles, one per pixel, 0.03 high per grey level,
+   each shrunk 3% toward its centre and scaled by 7.5: once at
+   (50, -110, -50) before t = 9 and once turned 180 about y at (450,
+   -110, 160) (and z - 110 for 9 <= t < 14) after; doit = 0 and 1
+   [verified, 0x00491850..0x00491ae9, 0x0048dfc0].
+
+   4.5.  kthrio1
+
+   Before t = -5, meshes/kthrio1.obj with the pair this+0x112c at
+   translate(-282.5, -160.59, 2.1) rotate(90, y) scale(5), colour
+   (0.8, 0.9, 1), alphaplane2 = 1 - Math_Ease(clamp((t + 35) * 0.4),
+   1), so it dissolves away over the part's first 2.5 s [verified,
+   0x0049222d..0x00492481].
+
+   4.6.  The sparks
+
+   _srand(0x409bfa), then up to 600 untextured, unblended billboards,
+   600 clamp((t + 8.96) * 2.6) of them, from the road 2 behind the
+   bike's place on the track, raised 2 and 180 back in x. Each has its
+   own phase v = clamp(frac(500 r1 + 0.6 (r2 + 1) t) * c): it flies
+   back 30 v along the road, spreads 6 v r sideways and up, falls by
+   r + 12.4 v^2, shrinks as 0.04 (1.5 (1 - v))^2 and fades as (0.2,
+   0.05, 0.01) (3 (1 - v))^4, which GL clamps to white-orange while v is small
+   [verified, 0x00492542..0x0049314b]. A last gluPerspective(65, ...,
+   1, 1000), an empty GL_POINTS and a glPopMatrix close DrawScene; the
+   pop takes the push made after the sky.
+
+5.  Frame
+
+   5.1.  The clock
+
+   part_motor::Frame runs while started[1] and not done[1]. Its local
+   clock this+0x218 starts at -35 in Init, gains the frame delta, is
+   held at -35.01 at least, and t = local + g_partTimeCarry; at t = 29
+   it hands over to part_truck. near 0.35, far 550 [verified,
+   0x004938b1..0x00493a26].
+
+   5.2.  The cameras
+
+   u = 25 t, or -275 before t = -5. Fourteen Camera_Set calls, each
+   behind a time window, write the eye camera in order, so the last
+   window that holds wins [verified, 0x00493a2c..0x00494aeb]:
+
+    always        a default view from (u, 30, -110) toward (u + 50, -30, 0)
+    -125 .. -5    an orbit of radius 7.5 about (u, -170, 0), up (0, 1, 1)
+    -35 .. -25    the orbit at radius 52.5, angle 3.2 falling
+    -25 .. -14    three orbits tightening and swinging
+    -14 .. -5     the orbit easing out, then flying on with the bike
+    -5 .. 0.5     a pull-back past the bike, easing by Math_Ease(0.4 t)
+    0.5 .. 3.5    alongside, 60 out in z
+    3.5 .. 6      rising behind it
+    6 .. 9        from 80 out, sweeping back
+    9 .. 14       climbing over the road
+    14 .. 24.5    a long crane up and over, Math_Ease in four terms
+    24.5 .. 35    from above, pulling back as 10 (13 - 1.2 (t - 25))
+
+   The exact expressions are in the source and Frame's plate comment.
+
+   5.3.  The shake and the light
+
+   As part_video's (effects/video.txt 5.2), on the same try1.sav path:
+   F, R = F x up, i = trunc(35 (t + 300000)) % 950, then target += R
+   x_i b + up y_i b with b = 0.8 A, and up.x += sin(a_i * 1.7189 b)
+   K * 0.3 M - this time not multiplied by 0. A is 0.011, 0.003 for
+   -24 <= t < -17 and 0.005 after t = 6; K is 3 before t = -24, else
+   0.5; M is 0.1, 0.01 or 0.07 by the same windows. bend3's RightV and
+   UpV are x_i and y_i times K A 0.01 S, S = 0 until t = -20, -10.4
+   for -17 < t < -14, else 3.99. a_i is Path_Load's smoothed column:
+   with it the camera at t = 5.2476 reproduces 2.4's reading, up.x
+   included [verified, 0x00494af1..0x00494f4e; observed]. The light
+   camera is fixed: eye (0, 0, 30), target 0, up (0, 1, 0).
+
+6.  The render passes
+
+   Init loads these pairs; a pair's fragment program is the vertex
+   slot plus one [verified, 0x00493711..0x004937ca]:
+
+    0x408  this+0x1180  vertex_boat_test2cut, fragment_boat_test2
+    0x416  this+0x1184  v_roadcut, f_roadcut
+    0x418  this+0x11e8  v_motor, f_motor
+    0x40e  this+0x11ec  vertex_boat_test2building, fragment_boat_test3
+    0x414  this+0x11f8  vertex_boat_test2building, fragment_boat_testhex
+    0x41a  this+0x112c  vertex_boat_test2building, f_kthrio1
+    0x40c  this+0x11f0  vertex_boat_test_motion, fragment_boat_test_motion
+    0x40a  this+0x11f4  vertex_boat, fragment_train
+    0x3ea  this+0x117c  vertex_projection_anisotropic,
+                        fragment_projection_anisotropic, with box.3ds
+
+   After the scene, Frame runs the post chain every part shares,
+   effects/look.txt 3, with its programs in these slots [verified]:
+
+    this+0x1ec   cgeffects/fragment_blur256.cpp     passes 1 and 3
+    this+0x1fc   cgeffects/fragment_wireframe.cpp   pass 2
+    this+500     cgeffects/fragment_bend3.cpp       pass 4
+    this+0x1f8   cgeffects/fragment_blur256FOV.cpp  loaded, not run
+    this+0x1e8   cgeffects/fragment_Blur_circular.cpp  loaded, not run
+    this+0x1f0   cgeffects/fragment_motion.cpp      loaded, not run
+
+   The pairs in this+0x11f0, this+0x11f4 and this+0x117c and the three
+   passes marked above are loaded and never bound, and
+   textures/pattern5.jpg is loaded into texBase + 10 and never bound;
+   this+0x200 is set to slot 0x401 and nothing loads or reads it
+   [verified, every read of those fields in Init, Frame and DrawScene].
+   No other part can use them: each part numbers its textures and
+   programs in its own band - part_motor from 1000 (0x3e8), part_truck
+   2000, part_rail 3000, part_boat 4000, part_end 5000, part_city
+   below 0x100 - and loads its own copies, pattern5 included
+   [verified, the slot assignments in each Init].
+
+   It sets "alpha", "RightV" and "UpV" on the program in this+500
+   (effects/look.txt 3.3), then draws this+0x1138 to the window with
+   glBlendFunc(GL_ONE, GL_ONE) in a grey that fades in as
+   clamp((t + 35) * 0.5) [verified]. alpha is
+
+    x     = clamp((t + 30) * 0.4, 0, 1)
+    alpha = (1 - Math_Ease(x, 1)) * 0.3 + 0.2
+
+   and Math_Ease(x, 1) is (1 - cos(pi x)) / 2, so alpha eases from
+   0.5 at the part's start to 0.2 by t = -27.5 [verified, Math_Ease's
+   plate comment, and 0.2 observed at t = 5.2]. RightV and UpV are
+   a per-frame table entry scaled by a factor that is 0 until t = -20
+   [verified].
+
+7.  Tables and constants
+
+   +--------------+-------------------------+----------+--------------------------+
+   | Value        | Where                   | Evidence | What                     |
+   +==============+=========================+==========+==========================+
+   | 5, 0.5       | vertex_boat_test2cut    | verified | rim exponent and floor   |
+   +--------------+-------------------------+----------+--------------------------+
+   | 15, 2        | vertex_boat_test2cut    | verified | head-on highlight        |
+   +--------------+-------------------------+----------+--------------------------+
+   | 0.65, 3      | vertex_boat_test2cut    | verified | rim and highlight gains  |
+   +--------------+-------------------------+----------+--------------------------+
+   | 0.0005       | vertex_boat_test2cut    | verified | distance falloff         |
+   +--------------+-------------------------+----------+--------------------------+
+   | 0.7, -0.7    | fragment_boat_test2     | verified | the hole lattice         |
+   +--------------+-------------------------+----------+--------------------------+
+   | 0.2,0.6,1 x  | fragment_boat_test2     | verified | the blue mask colour     |
+   | 4000         |                         |          |                          |
+   +--------------+-------------------------+----------+--------------------------+
+   | part end     | double at 0x004f6120    | verified | hand-over time           |
+   +--------------+-------------------------+----------+--------------------------+
+   | part start   | double at 0x004f5d78    | verified | Init sets both clocks    |
+   +--------------+-------------------------+----------+--------------------------+
+
+
+8.  Reconstruction notes
+
+   The shader files are the demo's code and are transcribed as they
+   are, dead assignments and all, with the live result noted. The rim
+   term is per vertex and interpolated, not per pixel; keeping it per
+   vertex keeps the faceted quality of the edges on coarse meshes.
+
+   The port matches the original at every 6 s checkpoint from t = -30
+   to 6 at the 800x450 view, to a mean of 0.12 per 8-bit channel or
+   less [observed, the agent pipe on both].
+
+9.  Open questions
+
+   o Why the unused loads are there - left from an earlier version of
+     the part, or meant for a pass that was cut [guess].
