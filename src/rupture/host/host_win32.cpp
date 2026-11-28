@@ -549,12 +549,25 @@ static void pump(void)
 	}
 }
 
-/* OURS. The title, when it has changed. */
+/*
+ * OURS. The title, when it has changed, looked at no more than once in
+ * 100 ms of GetTickCount - the first call at once - so App_Title's
+ * hundredths do not set it every frame. A change in the last 100 ms
+ * before the agent holds the clock is not shown.
+ */
 static void title_update(const char *suffix)
 {
 	static std::string title;
-	std::string        now = std::string(App_Title()) + suffix;
+	static DWORD       last;
+	static bool        shown;
+	DWORD              tick = GetTickCount();
 
+	if (shown && tick - last < 100) {
+		return;
+	}
+	shown = true;
+	last = tick;
+	std::string now = std::string(App_Title()) + suffix;
 	if (title != now) {
 		title = now;
 		SetWindowTextA(g_hWnd, title.c_str());

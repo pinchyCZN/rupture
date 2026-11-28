@@ -19,6 +19,7 @@ static bool        g_loaded;
 static bool        g_started;
 static bool        g_dragging;
 static std::string g_title;
+static double      g_titleAt = -1.0e9;  /* the title is looked at no more than once in 250 ms */
 
 /*
  * OURS. The demo has ended: no more frames and no more input, and the
@@ -64,6 +65,10 @@ static void frame(void)
 		park();
 		return;
 	}
+	if (emscripten_get_now() - g_titleAt < 250.0) {
+		return;
+	}
+	g_titleAt = emscripten_get_now();
 	if (g_title != App_Title()) {
 		g_title = App_Title();
 		emscripten_set_window_title(g_title.c_str());
